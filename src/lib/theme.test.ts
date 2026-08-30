@@ -5,7 +5,7 @@ import { THEME_KEY, applyTheme, isTheme, readStoredTheme, writeStoredTheme } fro
 describe("theme", () => {
   afterEach(() => {
     window.localStorage.clear()
-    document.documentElement.classList.remove("dark")
+    document.documentElement.classList.remove("dark", "theme-transition")
     document.documentElement.style.colorScheme = ""
   })
 
@@ -22,6 +22,11 @@ describe("theme", () => {
     applyTheme("dark")
     expect(document.documentElement).toHaveClass("dark")
     expect(document.documentElement.style.colorScheme).toBe("dark")
+    expect(document.documentElement).not.toHaveClass("theme-transition")
+
+    applyTheme("light", { animate: true })
+    expect(document.documentElement).toHaveClass("theme-transition")
+    expect(document.documentElement).not.toHaveClass("dark")
   })
 
   it("round-trips the stored preference", () => {

@@ -35,7 +35,7 @@ export function SavedTestsProvider({ children }: { children: React.ReactNode }) 
   const [tests, setTests] = useState<SavedTest[]>([])
   const [pendingLoad, setPendingLoad] = useState<SavedTest | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [collapsed, setCollapsed] = useState(true)
+  const [collapsed, setCollapsed] = useState(false)
 
   useEffect(() => {
     setTests(readSavedTests())
@@ -101,7 +101,7 @@ export function useSavedTests() {
       pendingLoad: null,
       consumePendingLoad: () => null,
       selectedId: null,
-      collapsed: true,
+      collapsed: false,
       setCollapsed: () => {},
     } satisfies SavedTestsContextValue
   }

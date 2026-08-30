@@ -25,6 +25,14 @@ export type SavedTestInput = Omit<SavedTest, "id" | "at"> & {
 const METHODS = new Set<RequestMethod>(["GET", "POST"])
 const OVERALLS = new Set<Overall>(["healthy", "degraded", "misconfigured", "unavailable"])
 
+const TITLE_ALIASES: Record<string, string> = {
+  "The functional request succeeded": "The test succeeded",
+}
+
+export function savedTestTitle(title: string) {
+  return TITLE_ALIASES[title] ?? title
+}
+
 export function testLabel(url: string): string {
   try {
     const parsed = new URL(url)
@@ -67,7 +75,10 @@ export function readSavedTests(): SavedTest[] {
     if (!raw) return []
     const parsed = JSON.parse(raw) as unknown
     if (!Array.isArray(parsed)) return []
-    return parsed.filter(isSavedTest).slice(0, SAVED_TESTS_MAX)
+    return parsed
+      .filter(isSavedTest)
+      .map((item) => ({ ...item, title: savedTestTitle(item.title) }))
+      .slice(0, SAVED_TESTS_MAX)
   } catch {
     return []
   }
@@ -86,7 +97,7 @@ export function toSavedTest(input: SavedTestInput): SavedTest {
     url: input.url.trim(),
     method: input.method,
     overall: input.overall,
-    title: input.title,
+    title: savedTestTitle(input.title),
     explanation: input.explanation,
     status: input.status,
     durationMs: input.durationMs,

@@ -17,10 +17,23 @@ export function isDarkTheme(theme: Theme) {
   return theme === "dark" || (theme === "system" && prefersDark())
 }
 
-export function applyTheme(theme: Theme) {
+const THEME_TRANSITION_MS = 220
+
+let themeTransitionTimer = 0
+
+export function applyTheme(theme: Theme, options?: { animate?: boolean }) {
+  const root = document.documentElement
   const dark = isDarkTheme(theme)
-  document.documentElement.classList.toggle("dark", dark)
-  document.documentElement.style.colorScheme = dark ? "dark" : "light"
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  if (options?.animate && !reduceMotion) {
+    root.classList.add("theme-transition")
+    window.clearTimeout(themeTransitionTimer)
+    themeTransitionTimer = window.setTimeout(() => {
+      root.classList.remove("theme-transition")
+    }, THEME_TRANSITION_MS)
+  }
+  root.classList.toggle("dark", dark)
+  root.style.colorScheme = dark ? "dark" : "light"
 }
 
 export function readStoredTheme(): Theme {

@@ -7,13 +7,5 @@ export default async function Home({
 }) {
   const params = await searchParams
 
-  return (
-    <main
-      id="main"
-      tabIndex={-1}
-      className="mx-auto w-full max-w-2xl flex-1 px-4 py-10 outline-none sm:px-6 sm:py-14"
-    >
-      <ProbeApp initialUrl={params.url?.trim() ?? ""} />
-    </main>
-  )
+  return <ProbeApp initialUrl={params.url?.trim() ?? ""} />
 }

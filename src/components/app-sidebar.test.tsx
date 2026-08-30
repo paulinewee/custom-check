@@ -6,7 +6,7 @@ import { ProbeApp } from "@/components/probe-app"
 import { SavedTestsProvider } from "@/components/saved-tests-context"
 import { ThemeProvider } from "@/components/theme-provider"
 import { TRANSLATE_ENDPOINT } from "@/lib/probe/constants"
-import { SAVED_TESTS_KEY, writeSavedTests, toSavedTest } from "@/lib/saved-tests"
+import { writeSavedTests, toSavedTest } from "@/lib/saved-tests"
 
 const navigation = vi.hoisted(() => ({ pathname: "/" }))
 
@@ -62,79 +62,71 @@ describe("AppSidebar", () => {
     document.documentElement.style.colorScheme = ""
   })
 
-  it("starts minimized with the Custom Check mark", () => {
+  it("starts expanded with a sidebar toggle", () => {
     renderSidebar()
-
-    expect(screen.getByRole("link", { name: "Custom Check" })).toHaveAttribute("href", "/")
-    expect(screen.getByRole("button", { name: "Expand sidebar" })).toHaveAttribute(
-      "aria-expanded",
-      "false",
-    )
-    expect(screen.queryByRole("link", { name: "Overview" })).not.toBeInTheDocument()
-    expect(screen.queryByRole("heading", { name: "Checks" })).not.toBeInTheDocument()
-  })
-
-  it("expands to Custom Check and Overview without an empty checks list", async () => {
-    const user = userEvent.setup()
-    renderSidebar()
-
-    await user.click(screen.getByRole("button", { name: "Expand sidebar" }))
 
     expect(screen.getByText("Custom Check")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Collapse sidebar" })).toHaveAttribute(
       "aria-expanded",
       "true",
     )
-    expect(screen.getByRole("link", { name: "Overview" })).toHaveAttribute("aria-current", "page")
-    expect(screen.getByRole("link", { name: "Overview" })).not.toHaveClass("font-medium")
-    expect(screen.getByRole("link", { name: "Overview" })).toHaveClass("text-foreground")
-    expect(screen.getByRole("link", { name: "Documentation" })).toHaveClass("text-muted-foreground")
-    expect(screen.getByRole("link", { name: "Configure Test Endpoint" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Home" })).toBeInTheDocument()
+  })
+
+  it("shows Custom Check and Home without an empty checks list", () => {
+    renderSidebar()
+
+    expect(screen.getByText("Custom Check")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Collapse sidebar" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    )
+    expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "page")
+    expect(screen.getByRole("link", { name: "Home" })).not.toHaveClass("font-medium")
+    expect(screen.getByRole("link", { name: "Home" })).toHaveClass("bg-muted", "rounded-lg", "text-foreground")
+    expect(screen.getByRole("link", { name: "Settings" })).toHaveClass(
+      "rounded-lg",
+      "text-muted-foreground",
+      "hover:bg-muted/60",
+    )
+    expect(screen.getByRole("link", { name: "Settings" })).not.toHaveClass("bg-muted")
+    expect(screen.getByRole("link", { name: "Test Endpoint" })).toHaveAttribute(
       "href",
       "/configure",
     )
-    expect(screen.getByRole("link", { name: "Configure Test Endpoint" })).not.toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Test Endpoint" })).not.toHaveAttribute(
       "aria-current",
     )
-    expect(screen.getByRole("link", { name: "Documentation" })).toHaveAttribute("href", "/docs")
-    expect(screen.getByRole("link", { name: "Documentation" })).not.toHaveAttribute("aria-current")
-    expect(screen.queryByRole("heading", { name: "Checks" })).not.toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "Settings" })).toHaveAttribute("href", "/settings")
+    expect(screen.getByRole("link", { name: "Settings" })).not.toHaveAttribute("aria-current")
+    expect(screen.queryByRole("heading", { name: "Recents" })).not.toBeInTheDocument()
     expect(screen.queryByText(/saved here so you can open them again/)).not.toBeInTheDocument()
   })
 
-  it("does not mark Overview current on another path", async () => {
+  it("does not mark Home current on another path", () => {
     navigation.pathname = "/elsewhere"
-    const user = userEvent.setup()
     renderSidebar()
-    await user.click(screen.getByRole("button", { name: "Expand sidebar" }))
 
-    expect(screen.getByRole("link", { name: "Overview" })).not.toHaveAttribute("aria-current")
+    expect(screen.getByRole("link", { name: "Home" })).not.toHaveAttribute("aria-current")
   })
 
-  it("marks Configure Test Endpoint current on /configure", async () => {
+  it("marks Test Endpoint current on /configure", () => {
     navigation.pathname = "/configure"
-    const user = userEvent.setup()
     renderSidebar()
-    await user.click(screen.getByRole("button", { name: "Expand sidebar" }))
 
-    expect(screen.getByRole("link", { name: "Configure Test Endpoint" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Test Endpoint" })).toHaveAttribute(
       "aria-current",
       "page",
     )
-    expect(screen.getByRole("link", { name: "Overview" })).not.toHaveAttribute("aria-current")
+    expect(screen.getByRole("link", { name: "Home" })).not.toHaveAttribute("aria-current")
   })
 
-  it("marks Documentation current on /docs", async () => {
-    navigation.pathname = "/docs"
-    const user = userEvent.setup()
+  it("marks Settings current on /settings", () => {
+    navigation.pathname = "/settings"
     renderSidebar()
-    await user.click(screen.getByRole("button", { name: "Expand sidebar" }))
 
-    expect(screen.getByRole("link", { name: "Documentation" })).toHaveAttribute(
-      "aria-current",
-      "page",
-    )
-    expect(screen.getByRole("link", { name: "Overview" })).not.toHaveAttribute("aria-current")
+    expect(screen.getByRole("link", { name: "Settings" })).toHaveAttribute("aria-current", "page")
+    expect(screen.getByRole("link", { name: "Home" })).not.toHaveAttribute("aria-current")
   })
 
   it("lists stored tests and loads one into the form", async () => {
@@ -149,14 +141,15 @@ describe("AppSidebar", () => {
       </ThemeProvider>,
     )
 
-    await user.click(screen.getByRole("button", { name: "Expand sidebar" }))
-    expect(screen.getByRole("heading", { name: "Checks" })).toBeInTheDocument()
-    expect(await screen.findByText("translation-api.ghananlp.org/v2/translate")).toBeInTheDocument()
-    expect(screen.getByText("Translation succeeded")).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Recents" })).toBeInTheDocument()
+    expect(await screen.findByText("api.huniki.ai/translate")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Open api.huniki.ai/translate" })).toHaveTextContent(
+      "Translation succeeded · 200 · 120 ms",
+    )
 
     await user.click(
       screen.getByRole("button", {
-        name: "Open translation-api.ghananlp.org/v2/translate",
+        name: "Open api.huniki.ai/translate",
       }),
     )
 
@@ -164,24 +157,32 @@ describe("AppSidebar", () => {
       expect(screen.getByRole("textbox", { name: "Endpoint" })).toHaveValue(TRANSLATE_ENDPOINT)
     })
     expect(
-      screen.getByRole("heading", { name: /Your endpoint requires an authentication token/ }),
+      screen.getByRole("heading", {
+        name: /Your endpoint requires a provider and an authentication token/,
+      }),
     ).toBeInTheDocument()
   })
 
-  it("removes a stored test", async () => {
+  it("hides and shows Recents from the section toggle", async () => {
     writeSavedTests([saved])
     const user = userEvent.setup()
     renderSidebar()
 
-    await user.click(screen.getByRole("button", { name: "Expand sidebar" }))
-    await user.click(
-      await screen.findByRole("button", {
-        name: "Remove translation-api.ghananlp.org/v2/translate",
-      }),
-    )
+    expect(screen.getByRole("heading", { name: "Recents" })).not.toHaveClass("uppercase")
+    expect(screen.getByRole("heading", { name: "Recents" })).toHaveClass("text-sm")
+    expect(screen.getByRole("heading", { name: "Recents" })).not.toHaveClass("font-medium")
+    expect(screen.getByRole("link", { name: "Settings" })).toHaveClass("text-sm")
+    expect(screen.getByText("Translation succeeded")).toBeInTheDocument()
 
-    expect(screen.queryByRole("heading", { name: "Checks" })).not.toBeInTheDocument()
-    expect(JSON.parse(window.localStorage.getItem(SAVED_TESTS_KEY) ?? "[]")).toEqual([])
+    await user.click(screen.getByRole("button", { name: "Hide recents" }))
+    expect(
+      screen.queryByRole("button", { name: "Open api.huniki.ai/translate" }),
+    ).not.toBeInTheDocument()
+    expect(window.localStorage.getItem("custom-check.recents-open")).toBe("false")
+
+    await user.click(screen.getByRole("button", { name: "Show recents" }))
+    expect(screen.getByRole("button", { name: "Open api.huniki.ai/translate" })).toBeInTheDocument()
+    expect(window.localStorage.getItem("custom-check.recents-open")).toBe("true")
   })
 
   it("resizes the sidebar from the drag handle", async () => {
@@ -189,13 +190,13 @@ describe("AppSidebar", () => {
     renderSidebar()
 
     const handle = screen.getByRole("slider", { name: "Resize sidebar" })
-    expect(handle).toHaveAttribute("aria-valuenow", "56")
-    expect(screen.queryByRole("link", { name: "Overview" })).not.toBeInTheDocument()
+    expect(handle).toHaveAttribute("aria-valuenow", "256")
+    expect(screen.getByRole("link", { name: "Home" })).toBeInTheDocument()
 
     handle.focus()
     await user.keyboard("{ArrowRight}")
-    expect(screen.getByRole("link", { name: "Overview" })).toBeInTheDocument()
-    expect(handle).toHaveAttribute("aria-valuenow", "256")
+    expect(screen.getByRole("link", { name: "Home" })).toBeInTheDocument()
+    expect(handle).toHaveAttribute("aria-valuenow", "272")
 
     await user.keyboard("{End}")
     expect(handle).toHaveAttribute("aria-valuenow", "480")
@@ -203,8 +204,8 @@ describe("AppSidebar", () => {
 
     await user.keyboard("{Home}")
     expect(screen.getByRole("button", { name: "Expand sidebar" })).toBeInTheDocument()
-    expect(screen.queryByRole("link", { name: "Overview" })).not.toBeInTheDocument()
-    expect(handle).toHaveAttribute("aria-valuenow", "56")
+    expect(screen.queryByRole("link", { name: "Home" })).not.toBeInTheDocument()
+    expect(handle).toHaveAttribute("aria-valuenow", "48")
 
     await user.click(screen.getByRole("button", { name: "Expand sidebar" }))
     expect(handle).toHaveAttribute("aria-valuenow", "480")
@@ -214,11 +215,6 @@ describe("AppSidebar", () => {
     const user = userEvent.setup()
     renderSidebar()
 
-    expect(screen.getByRole("button", { name: "Dark" })).toBeInTheDocument()
-    expect(screen.queryByRole("radiogroup", { name: "Theme" })).not.toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Account" })).not.toBeInTheDocument()
-
-    await user.click(screen.getByRole("button", { name: "Expand sidebar" }))
     expect(screen.getByRole("radiogroup", { name: "Theme" })).toBeInTheDocument()
     expect(screen.getByText("Theme")).toBeInTheDocument()
     expect(screen.getByRole("radio", { name: "Dark" })).toHaveAttribute("aria-checked", "true")
@@ -233,5 +229,41 @@ describe("AppSidebar", () => {
     await user.click(screen.getByRole("button", { name: "Collapse sidebar" }))
     expect(screen.queryByRole("radiogroup", { name: "Theme" })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Light" })).toBeInTheDocument()
+  })
+
+  it("slides in from the left as a drawer on small screens", async () => {
+    const previousMatchMedia = window.matchMedia
+    window.matchMedia = ((query: string) => ({
+      matches: query.includes("max-width: 767px"),
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    })) as typeof window.matchMedia
+
+    const user = userEvent.setup()
+    renderSidebar()
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Expand sidebar" })).toBeInTheDocument()
+    })
+    expect(screen.queryByRole("dialog", { name: "Sidebar" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("link", { name: "Home" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("slider", { name: "Resize sidebar" })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole("button", { name: "Expand sidebar" }))
+    const drawer = await screen.findByRole("dialog", { name: "Sidebar" })
+    expect(drawer).toHaveClass("translate-x-0", "w-full", "inset-0")
+    expect(screen.getByRole("link", { name: "Home" })).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "Settings" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Close sidebar" })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole("button", { name: "Collapse sidebar" }))
+    expect(screen.queryByRole("dialog", { name: "Sidebar" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Expand sidebar" })).toBeInTheDocument()
+    window.matchMedia = previousMatchMedia
   })
 })

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest"
 import {
   SAVED_TESTS_KEY,
   readSavedTests,
+  savedTestTitle,
   testLabel,
   toSavedTest,
   writeSavedTests,
@@ -32,6 +33,18 @@ describe("saved tests", () => {
     const stored = JSON.parse(window.localStorage.getItem(SAVED_TESTS_KEY) ?? "[]") as unknown[]
     expect(JSON.stringify(stored)).not.toMatch(/secret|Bearer|eyJ/)
     expect(readSavedTests()).toEqual([sample])
+  })
+
+  it("renames the old success title", () => {
+    expect(savedTestTitle("The functional request succeeded")).toBe("The test succeeded")
+    expect(toSavedTest({ ...sample, title: "The functional request succeeded" }).title).toBe(
+      "The test succeeded",
+    )
+    window.localStorage.setItem(
+      SAVED_TESTS_KEY,
+      JSON.stringify([{ ...sample, title: "The functional request succeeded" }]),
+    )
+    expect(readSavedTests()[0]?.title).toBe("The test succeeded")
   })
 
   it("ignores corrupted storage", () => {

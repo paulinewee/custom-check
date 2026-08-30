@@ -40,7 +40,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     if (theme !== "system") return
     const media = window.matchMedia("(prefers-color-scheme: dark)")
     function onChange() {
-      applyTheme("system")
+      applyTheme("system", { animate: true })
     }
     media.addEventListener("change", onChange)
     return () => media.removeEventListener("change", onChange)
@@ -49,6 +49,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const setTheme = useCallback((next: Theme) => {
     if (!isTheme(next)) return
     writeStoredTheme(next)
+    applyTheme(next, { animate: true })
     setThemeState(next)
   }, [])
 
