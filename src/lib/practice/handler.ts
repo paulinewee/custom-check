@@ -1,20 +1,11 @@
 import {
-  PRACTICE_LANGUAGES_PATH,
   PRACTICE_SLOW_MS,
+  PRACTICE_TOKEN,
   PRACTICE_TRANSLATE_PATH,
   type PracticeConfig,
 } from "@/lib/practice/config"
+import { isAuthFieldKey } from "@/lib/probe/defaults"
 import type { TimedFetchResult } from "@/lib/probe/types"
-
-export const PRACTICE_LANGUAGES: Record<string, string> = {
-  en: "English",
-  tw: "Twi",
-  ee: "Ewe",
-  ga: "Ga",
-  fat: "Fante",
-  yo: "Yoruba",
-  ha: "Hausa",
-}
 
 function json(body: unknown, status = 200): Response {
   return Response.json(body, {
@@ -23,8 +14,18 @@ function json(body: unknown, status = 200): Response {
   })
 }
 
-function header(request: Request, name: string): string {
-  return request.headers.get(name) ?? ""
+function bodyToken(record: Record<string, unknown>): string {
+  for (const [key, value] of Object.entries(record)) {
+    if (typeof value === "string" && isAuthFieldKey(key) && value.trim()) {
+      return value.trim()
+    }
+  }
+  return ""
+}
+
+function acceptsToken(config: PracticeConfig, apiKey: string) {
+  if (!apiKey) return false
+  return apiKey === config.token.trim() || apiKey === PRACTICE_TOKEN
 }
 
 function pathnameOf(request: Request): string {
@@ -35,12 +36,12 @@ function pathnameOf(request: Request): string {
   }
 }
 
-export function translatePractice(text: string, lang: string): string {
-  const pair = lang.trim().toLowerCase()
+export function translatePractice(text: string, source: string, target: string): string {
   const input = text.trim()
-  if (pair === "en-tw" && /^hello$/i.test(input)) return "Agoo"
-  const target = pair.includes("-") ? pair.slice(pair.indexOf("-") + 1) : pair
-  return target ? `${input} [${target}]` : input
+  if (source.trim().toLowerCase() === "en" && target.trim().toLowerCase() === "tw" && /^hello$/i.test(input)) {
+    return "Agoo"
+  }
+  return target.trim() ? `${input} [${target.trim()}]` : input
 }
 
 export async function handlePracticeRequest(
@@ -55,27 +56,13 @@ export async function handlePracticeRequest(
     await new Promise((resolve) => setTimeout(resolve, PRACTICE_SLOW_MS))
   }
 
-  const token = header(request, "Ocp-Apim-Subscription-Key").trim()
-  if (!config.authenticated || !token || token !== config.token.trim()) {
-    return json({ error: "Unauthorized" }, 401)
-  }
-
   const path = pathnameOf(request)
-  const languages = path === PRACTICE_LANGUAGES_PATH || request.method === "GET"
-
-  if (languages) {
-    if (!config.languages) {
-      return json({ error: "Languages are unavailable" }, 503)
-    }
-    return json(PRACTICE_LANGUAGES)
-  }
-
-  if (path !== PRACTICE_TRANSLATE_PATH) {
+  if (path !== PRACTICE_TRANSLATE_PATH && path !== "/api/practice/v2/translate") {
     return json({ error: "Not found" }, 404)
   }
 
-  if (!config.requestValid) {
-    return json({ error: "Invalid request body" }, 400)
+  if (request.method !== "POST") {
+    return json({ error: "Method not allowed" }, 405)
   }
 
   let payload: unknown
@@ -86,17 +73,27 @@ export async function handlePracticeRequest(
   }
 
   const record = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {}
-  const text = typeof record.in === "string" ? record.in : ""
-  const lang = typeof record.lang === "string" ? record.lang : ""
-  if (!text.trim() || !lang.trim()) {
-    return json({ error: "Invalid request body" }, 400)
+  const apiKey = bodyToken(record)
+  if (!config.authenticated || !acceptsToken(config, apiKey)) {
+    return json({ detail: "Unauthorized" }, 401)
+  }
+
+  if (!config.requestValid) {
+    return json({ detail: "Invalid request body" }, 400)
+  }
+
+  const text = typeof record.text === "string" ? record.text : ""
+  const source = typeof record.source === "string" ? record.source : ""
+  const target = typeof record.target === "string" ? record.target : ""
+  if (!text.trim() || !source.trim() || !target.trim()) {
+    return json({ detail: "Invalid request body" }, 400)
   }
 
   if (!config.expectedOutput) {
     return json({ message: "ok", echo: text })
   }
 
-  return json({ translatedText: translatePractice(text, lang) })
+  return json({ translatedText: translatePractice(text, source, target) })
 }
 
 export async function practiceTimedResult(

@@ -1,10 +1,17 @@
-import { MAX_GAP_MS, MAX_REQUESTS, RUN_TIMEOUT_MAX_MS } from "@/lib/probe/constants"
+import { MAX_REQUESTS, RUN_TIMEOUT_MAX_MS } from "@/lib/probe/constants"
 import type { BodyKind, BodyField, FieldValues } from "@/lib/probe/defaults"
-import type { RequestMethod, SendMode } from "@/lib/probe/types"
+import type { RequestMethod } from "@/lib/probe/types"
 
 export function validateSecret(value: string): string | null {
   if (!value.trim()) {
-    return "Enter an authentication token. Paste the value from your provider."
+    return "Enter an API key. Paste the Huniki or provider key."
+  }
+  return null
+}
+
+export function validateProvider(value: string): string | null {
+  if (!value.trim()) {
+    return "Choose a provider. Huniki uses this as api_name."
   }
   return null
 }
@@ -23,29 +30,6 @@ export function validateLanguageCode(value: string, label: "source" | "target"):
   }
   if (!/^[A-Za-z]{2,16}(?:[_-][A-Za-z0-9]{1,16})*$/.test(trimmed)) {
     return `That ${label} code is not valid. Use a code such as en or eng_Latn.`
-  }
-  return null
-}
-
-export function validateLangPair(value: string): string | null {
-  const trimmed = value.trim()
-  if (!trimmed) {
-    return "Enter a lang pair. Use a value such as en-tw."
-  }
-  if (!/^[A-Za-z]{2,8}-[A-Za-z0-9]{1,8}(?:-[A-Za-z0-9]{1,8})*$/.test(trimmed)) {
-    return "That lang pair is not valid. Use a value such as en-tw."
-  }
-  return null
-}
-
-export function validateJsonBody(value: string): string | null {
-  if (!value.trim()) {
-    return "Enter a JSON body. Add the request payload, then retest."
-  }
-  try {
-    JSON.parse(value)
-  } catch {
-    return "That is not valid JSON. Fix the syntax and try again."
   }
   return null
 }
@@ -101,34 +85,15 @@ export function validateRequestCount(value: string): string | null {
   return null
 }
 
-export function validateGapMs(value: string): string | null {
-  const trimmed = value.trim()
-  if (!trimmed) {
-    return "Enter the delay between requests in milliseconds."
-  }
-  if (!/^\d+$/.test(trimmed)) {
-    return "Enter a whole number of milliseconds."
-  }
-  const next = Number(trimmed)
-  if (next < 0) {
-    return "The delay cannot be negative."
-  }
-  if (next > MAX_GAP_MS) {
-    return `The delay must be ${MAX_GAP_MS} ms or less.`
-  }
-  return null
-}
-
 export type RequestFieldId =
   | "text"
   | "source"
   | "target"
-  | "lang"
-  | "raw-body"
+  | "provider"
   | "content-type"
   | "latency"
   | "count"
-  | "gap"
+  | (string & {})
 
 export type RequestFieldErrors = Partial<Record<RequestFieldId, string>>
 
@@ -136,34 +101,30 @@ export function validateRequestForm(input: {
   method: RequestMethod
   bodyKind: BodyKind
   fields: readonly BodyField[]
-  rawMode: boolean
   values: FieldValues
-  rawBody: string
-  defaultBody: string
   contentType: string
   latencyMs: string
   requestCount?: string
-  sendMode?: SendMode
-  gapMs?: string
+  allLanguagePairs?: boolean
 }): { errors: RequestFieldErrors; firstId: RequestFieldId | null } {
   const errors: RequestFieldErrors = {}
   const hasBody = input.method === "POST" && input.bodyKind !== "none"
 
   if (hasBody) {
-    if (input.rawMode) {
-      const raw = validateJsonBody(input.rawBody || input.defaultBody)
-      if (raw) errors["raw-body"] = raw
-    } else {
-      for (const field of input.fields) {
-        const value = input.values[field.role]
-        const invalid =
-          field.role === "text"
-            ? validateTranslateText(value)
-            : field.role === "lang"
-              ? validateLangPair(value)
-              : validateLanguageCode(value, field.role)
-        if (invalid) errors[field.role] = invalid
-      }
+    for (const field of input.fields) {
+      const value = input.values[field.key] ?? input.values[field.role] ?? ""
+      const errorKey = field.role === "custom" ? field.key : field.role
+      const invalid =
+        field.role === "text"
+          ? validateTranslateText(value)
+          : field.role === "provider"
+            ? validateProvider(value)
+            : field.role === "source" || field.role === "target"
+              ? validateLanguageCode(value, field.role)
+              : value.trim()
+                ? null
+                : `Enter ${field.label}. Add a value, then retest.`
+      if (invalid) errors[errorKey] = invalid
     }
     const contentType = validateContentType(input.contentType)
     if (contentType) errors["content-type"] = contentType
@@ -172,25 +133,36 @@ export function validateRequestForm(input: {
   const latency = validateLatencyMs(input.latencyMs)
   if (latency) errors.latency = latency
 
-  const count = validateRequestCount(input.requestCount ?? "1")
-  if (count) errors.count = count
-
-  if ((input.sendMode ?? "sequential") === "delayed") {
-    const gap = validateGapMs(input.gapMs ?? "")
-    if (gap) errors.gap = gap
+  if (!input.allLanguagePairs) {
+    const count = validateRequestCount(input.requestCount ?? "1")
+    if (count) errors.count = count
   }
 
   const order: RequestFieldId[] = [
     "text",
     "source",
     "target",
-    "lang",
-    "raw-body",
+    "provider",
     "content-type",
     "count",
-    "gap",
     "latency",
   ]
   const firstId = order.find((id) => errors[id]) ?? null
   return { errors, firstId }
+}
+
+const CUSTOMIZE_FIELD_IDS: RequestFieldId[] = [
+  "text",
+  "source",
+  "target",
+  "provider",
+  "content-type",
+  "count",
+]
+
+export function firstCustomizeError(errors: RequestFieldErrors): RequestFieldId | null {
+  const extras = Object.keys(errors).filter(
+    (id) => id !== "latency" && !CUSTOMIZE_FIELD_IDS.includes(id as RequestFieldId),
+  )
+  return [...CUSTOMIZE_FIELD_IDS, ...extras].find((id) => errors[id]) ?? null
 }

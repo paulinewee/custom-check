@@ -1,7 +1,6 @@
 import { APP_SLUG } from "@/lib/brand"
 
-export const PRACTICE_TRANSLATE_PATH = "/api/practice/v2/translate"
-export const PRACTICE_LANGUAGES_PATH = "/api/practice/v2/languages"
+export const PRACTICE_TRANSLATE_PATH = "/api/practice/translate"
 export const PRACTICE_COOKIE = `${APP_SLUG}.practice-endpoint`
 export const PRACTICE_STORAGE_KEY = `${APP_SLUG}.practice-endpoint`
 export const PRACTICE_TOKEN = "practice-key"
@@ -10,7 +9,6 @@ export const PRACTICE_SLOW_MS = 2_500
 export type PracticeToggle = {
   reachable: boolean
   authenticated: boolean
-  languages: boolean
   requestValid: boolean
   expectedOutput: boolean
   latency: boolean
@@ -23,7 +21,6 @@ export type PracticeConfig = PracticeToggle & {
 const TOGGLE_KEYS = [
   "reachable",
   "authenticated",
-  "languages",
   "requestValid",
   "expectedOutput",
   "latency",
@@ -33,7 +30,6 @@ export function defaultPracticeConfig(): PracticeConfig {
   return {
     reachable: true,
     authenticated: true,
-    languages: true,
     requestValid: true,
     expectedOutput: true,
     latency: true,
@@ -44,7 +40,7 @@ export function defaultPracticeConfig(): PracticeConfig {
 export function isPracticeEndpoint(url: string): boolean {
   try {
     const path = new URL(url.trim()).pathname.replace(/\/+$/, "")
-    return path === PRACTICE_TRANSLATE_PATH || path === PRACTICE_LANGUAGES_PATH
+    return path === PRACTICE_TRANSLATE_PATH || path === "/api/practice/v2/translate"
   } catch {
     return false
   }

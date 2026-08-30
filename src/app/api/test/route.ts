@@ -25,7 +25,10 @@ function asRequest(body: Record<string, unknown>): TestRequest {
     auth:
       auth && typeof auth.secret === "string" && auth.secret
         ? {
-            kind: auth.kind === "bearer" || auth.kind === "query" ? auth.kind : "api_key",
+            kind:
+              auth.kind === "bearer" || auth.kind === "query" || auth.kind === "body"
+                ? auth.kind
+                : "api_key",
             headerName: auth.headerName || "X-API-Key",
             queryName: auth.queryName || "api_key",
             secret: auth.secret,

@@ -1,26 +1,29 @@
 import { describe, expect, it } from "vitest"
 
-import {
-  defaultPracticeConfig,
-  serializePracticeCookie,
-} from "@/lib/practice/config"
+import { defaultPracticeConfig, serializePracticeCookie } from "@/lib/practice/config"
 import { executeTest } from "@/lib/probe/execute"
 import type { TestRequest } from "@/lib/probe/types"
 
-const URL = "http://localhost:3000/api/practice/v2/translate"
+const URL = "http://localhost:3000/api/practice/translate"
 
 function request(overrides: Partial<TestRequest> = {}): TestRequest {
   return {
     url: URL,
     method: "POST",
     auth: {
-      kind: "api_key",
-      headerName: "Ocp-Apim-Subscription-Key",
+      kind: "body",
+      headerName: "api_key",
       queryName: "api_key",
       secret: defaultPracticeConfig().token,
     },
     headers: {},
-    body: JSON.stringify({ in: "Hello", lang: "en-tw" }),
+    body: JSON.stringify({
+      text: "Hello",
+      source: "en",
+      target: "tw",
+      api_name: "ghananlp",
+      api_key: defaultPracticeConfig().token,
+    }),
     assertions: [],
     latencyMs: 2000,
     ...overrides,
@@ -28,7 +31,7 @@ function request(overrides: Partial<TestRequest> = {}): TestRequest {
 }
 
 describe("executeTest practice endpoint", () => {
-  it("returns a healthy Ghana-shaped translation when every toggle is on", async () => {
+  it("returns a healthy Huniki-shaped translation when every toggle is on", async () => {
     const result = await executeTest(request(), undefined, {
       cookie: serializePracticeCookie(defaultPracticeConfig()),
     })

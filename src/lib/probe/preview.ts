@@ -5,6 +5,27 @@ function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`
 }
 
+function maskBody(body: string, authKey?: string): string {
+  try {
+    const parsed = JSON.parse(body) as Record<string, unknown>
+    let changed = false
+    for (const [key, value] of Object.entries(parsed)) {
+      if (typeof value !== "string") continue
+      const secretField =
+        key === authKey ||
+        key === "api_key" ||
+        /key|token|secret/i.test(key)
+      if (!secretField) continue
+      parsed[key] = maskSecret(value) ?? "••••"
+      changed = true
+    }
+    if (changed) return JSON.stringify(parsed, null, 2)
+  } catch {
+    /* keep original */
+  }
+  return body
+}
+
 export function buildCurl(request: TestRequest, mask = true): string {
   let url: URL
   try {
@@ -14,7 +35,7 @@ export function buildCurl(request: TestRequest, mask = true): string {
   }
   const headers = { ...request.headers }
 
-  if (request.auth?.secret) {
+  if (request.auth?.secret && request.auth.kind !== "body") {
     if (request.auth.kind === "query") {
       url.searchParams.set(request.auth.queryName || "api_key", request.auth.secret)
     } else if (request.auth.kind === "bearer") {
@@ -36,7 +57,10 @@ export function buildCurl(request: TestRequest, mask = true): string {
   }
 
   if (request.method === "POST" && request.body?.trim()) {
-    parts.push(`  -d ${shellQuote(request.body.trim())}`)
+    const payload = mask
+      ? maskBody(request.body.trim(), request.auth?.headerName)
+      : request.body.trim()
+    parts.push(`  -d ${shellQuote(payload)}`)
   }
 
   return parts.join(" \\\n")

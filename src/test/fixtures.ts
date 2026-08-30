@@ -22,7 +22,7 @@ export const rejectedTokenResult: TestResult = {
     authenticated: "fail",
   },
   suggestedAssertions: [],
-  curl: "curl -X POST 'https://translation-api.ghananlp.org/v2/translate'",
+  curl: "curl -X POST 'https://api.huniki.ai/translate'",
 }
 
 export const acceptedTokenResult: TestResult = {
@@ -49,27 +49,7 @@ export const acceptedTokenResult: TestResult = {
     durationMs: 120,
   },
   suggestedAssertions: [{ path: "translatedText", kind: "nonempty" }],
-  curl: "curl -X POST 'https://translation-api.ghananlp.org/v2/translate'",
-}
-
-export const languagesResult: TestResult = {
-  ...acceptedTokenResult,
-  diagnosis: {
-    title: "Languages listed",
-    explanation: "The provider returned supported languages.",
-    next: "Pick a language from the list.",
-  },
-  response: {
-    status: 200,
-    statusText: "OK",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      languages: { en: "English", tw: "Twi", ee: "Ewe", ga: "Ga", fat: "Fante" },
-    }),
-    contentType: "application/json",
-    durationMs: 40,
-  },
-  suggestedAssertions: [],
+  curl: "curl -X POST 'https://api.huniki.ai/translate'",
 }
 
 export function jsonResponse(body: unknown, status = 200): Response {

@@ -1,8 +1,8 @@
 export type RequestMethod = "GET" | "POST"
 
-export type SendMode = "sequential" | "parallel" | "delayed"
+export type SendMode = "sequential" | "parallel"
 
-export type AuthKind = "bearer" | "api_key" | "query"
+export type AuthKind = "bearer" | "api_key" | "query" | "body"
 
 export type AuthConfig = {
   kind: AuthKind

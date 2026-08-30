@@ -12,14 +12,15 @@ import {
 } from "./config"
 
 describe("isPracticeEndpoint", () => {
-  it("accepts the practice translate and languages paths on any host", () => {
-    expect(isPracticeEndpoint("http://localhost:3000/api/practice/v2/translate")).toBe(true)
-    expect(isPracticeEndpoint("https://example.com/api/practice/v2/languages")).toBe(true)
+  it("accepts the Huniki practice translate path on any host", () => {
+    expect(isPracticeEndpoint("http://localhost:3000/api/practice/translate")).toBe(true)
+    expect(isPracticeEndpoint("https://example.com/api/practice/translate")).toBe(true)
     expect(isPracticeEndpoint("http://127.0.0.1:3000/api/practice/v2/translate/")).toBe(true)
   })
 
-  it("rejects GhanaNLP and other local paths", () => {
-    expect(isPracticeEndpoint("https://translation-api.ghananlp.org/v2/translate")).toBe(false)
+  it("rejects public Huniki and other local paths", () => {
+    expect(isPracticeEndpoint("https://api.huniki.ai/translate")).toBe(false)
+    expect(isPracticeEndpoint("http://localhost/api/practice/v2/languages")).toBe(false)
     expect(isPracticeEndpoint("http://localhost/v2/translate")).toBe(false)
     expect(isPracticeEndpoint("not-a-url")).toBe(false)
   })
@@ -52,7 +53,7 @@ describe("practice cookie", () => {
 describe("practiceTranslateUrl", () => {
   it("joins origin and path", () => {
     expect(practiceTranslateUrl("http://localhost:3000/")).toBe(
-      "http://localhost:3000/api/practice/v2/translate",
+      "http://localhost:3000/api/practice/translate",
     )
   })
 })

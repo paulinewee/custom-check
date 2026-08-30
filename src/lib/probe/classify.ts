@@ -160,7 +160,7 @@ function diagnosisFor(
     default:
       return overall === "healthy"
         ? {
-            title: "The functional request succeeded",
+            title: "The test succeeded",
             explanation: `The provider returned a usable response in ${durationMs} ms.`,
           }
         : {

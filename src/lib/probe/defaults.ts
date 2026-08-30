@@ -1,23 +1,25 @@
-import { isPracticeEndpoint } from "@/lib/practice/config"
 import type { AuthKind, RequestMethod } from "@/lib/probe/types"
 
-export type BodyKind = "none" | "translate" | "asr"
-export type BodyFieldRole = "text" | "source" | "target" | "lang"
+export type BodyKind = "none" | "translate"
+export type BodyFieldRole = "text" | "source" | "target" | "provider" | "custom"
 
 export type BodyField = {
   key: string
   role: BodyFieldRole
   label: string
   sample: string
-  tip: string
 }
 
 export type TranslateShape = {
-  id: "ghana" | "vulavula" | "generic"
+  id: "huniki" | "custom"
   fields: readonly BodyField[]
 }
 
-export type FieldValues = Record<BodyFieldRole, string>
+export type FieldValues = Record<string, string>
+
+export const BODY_FIELD_ROLES = ["text", "source", "target", "provider", "custom"] as const
+
+const AUTH_KEY_NAMES = new Set(["api_key", "apikey", "access_token", "token", "key", "authorization"])
 
 export type EndpointDefaults = {
   method: RequestMethod
@@ -27,170 +29,169 @@ export type EndpointDefaults = {
   shape: TranslateShape
 }
 
-const GHANA_SHAPE: TranslateShape = {
-  id: "ghana",
+export const HUNIKI_PROVIDERS = [
+  { value: "ghananlp", label: "GhanaNLP" },
+  { value: "lelapa", label: "Lelapa" },
+  { value: "lesan", label: "Lesan" },
+] as const
+
+export type HunikiProvider = (typeof HUNIKI_PROVIDERS)[number]["value"]
+
+export const HUNIKI_LANGUAGES = [
+  { code: "en", name: "English" },
+  { code: "tw", name: "Twi" },
+  { code: "ee", name: "Ewe" },
+  { code: "gaa", name: "Ga" },
+  { code: "fat", name: "Fante" },
+  { code: "dag", name: "Dagbani" },
+  { code: "gur", name: "Gurene" },
+  { code: "yo", name: "Yoruba" },
+  { code: "ki", name: "Kikuyu" },
+  { code: "luo", name: "Luo" },
+  { code: "mer", name: "Meru" },
+  { code: "am", name: "Amharic" },
+  { code: "ti", name: "Tigrinya" },
+  { code: "zul", name: "Zulu" },
+  { code: "sot", name: "Sesotho" },
+  { code: "afr", name: "Afrikaans" },
+  { code: "swa", name: "Swahili" },
+  { code: "xho", name: "Xhosa" },
+  { code: "eng_Latn", name: "English (Latn)" },
+  { code: "zul_Latn", name: "Zulu (Latn)" },
+] as const
+
+export const DEFAULT_INPUT_SAMPLE = "The quick brown fox jumps over the lazy dog."
+
+export const HUNIKI_SHAPE: TranslateShape = {
+  id: "huniki",
   fields: [
-    {
-      key: "in",
-      role: "text",
-      label: "Input",
-      sample: "Hello",
-      tip: "The phrase to translate, such as Hello.",
-    },
-    {
-      key: "source",
-      role: "source",
-      label: "Source Language",
-      sample: "en",
-      tip: "Language of the input. Combined with the target as lang, such as en-tw.",
-    },
-    {
-      key: "target",
-      role: "target",
-      label: "Target Language",
-      sample: "tw",
-      tip: "Language to translate into. Combined with the source as lang, such as en-tw.",
-    },
+    { key: "text", role: "text", label: "Input", sample: DEFAULT_INPUT_SAMPLE },
+    { key: "source", role: "source", label: "Source Language", sample: "en" },
+    { key: "target", role: "target", label: "Target Language", sample: "tw" },
+    { key: "api_name", role: "provider", label: "Provider", sample: "ghananlp" },
   ],
 }
 
-const VULAVULA_SHAPE: TranslateShape = {
-  id: "vulavula",
-  fields: [
-    {
-      key: "input_text",
-      role: "text",
-      label: "Input",
-      sample: "Hello",
-      tip: "The text to translate. Vulavula recommends fewer than 100 words.",
-    },
-    {
-      key: "source_lang",
-      role: "source",
-      label: "Source Language",
-      sample: "eng_Latn",
-      tip: "Language of the input, such as eng_Latn or zul_Latn.",
-    },
-    {
-      key: "target_lang",
-      role: "target",
-      label: "Target Language",
-      sample: "zul_Latn",
-      tip: "Language to translate into, such as zul_Latn or eng_Latn.",
-    },
-  ],
+export function isBodyFieldRole(value: string): value is BodyFieldRole {
+  return (BODY_FIELD_ROLES as readonly string[]).includes(value)
 }
 
-const GENERIC_SHAPE: TranslateShape = {
-  id: "generic",
-  fields: [
-    {
-      key: "text",
-      role: "text",
-      label: "Input",
-      sample: "Hello",
-      tip: "The phrase we send as text, such as Hello.",
-    },
-    {
-      key: "source_language",
-      role: "source",
-      label: "Source Language",
-      sample: "en",
-      tip: "The language you start from. Sent as source_language.",
-    },
-    {
-      key: "target_language",
-      role: "target",
-      label: "Target Language",
-      sample: "fr",
-      tip: "The language you want back. Sent as target_language.",
-    },
-  ],
+export function humanizeFieldKey(key: string) {
+  const cleaned = key.replace(/[_-]+/g, " ").trim()
+  if (!cleaned) return "Field"
+  return cleaned.replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
-const EMPTY_VALUES: FieldValues = {
-  text: "",
-  source: "",
-  target: "",
-  lang: "",
+export function inferFieldRole(key: string): BodyFieldRole {
+  const normalized = key.toLowerCase().replace(/[^a-z0-9]/g, "")
+  if (["text", "input", "inputtext", "q", "query", "content", "prompt"].includes(normalized)) {
+    return "text"
+  }
+  if (["source", "from", "src", "sourcelang", "sourcelanguage"].includes(normalized)) {
+    return "source"
+  }
+  if (["target", "to", "dest", "targetlang", "targetlanguage"].includes(normalized)) {
+    return "target"
+  }
+  if (["apiname", "provider", "model"].includes(normalized)) return "provider"
+  return "custom"
 }
 
-export function valuesFromShape(shape: TranslateShape): FieldValues {
-  const values = { ...EMPTY_VALUES }
+export function isAuthFieldKey(key: string) {
+  return AUTH_KEY_NAMES.has(key.toLowerCase().replace(/[^a-z0-9_]/g, ""))
+}
+
+function sampleFromValue(value: unknown): string {
+  if (typeof value === "string") return value
+  if (typeof value === "number" || typeof value === "boolean") return String(value)
+  if (value == null) return ""
+  return JSON.stringify(value)
+}
+
+export function fieldsFromSampleJson(
+  record: Record<string, unknown>,
+): { fields: BodyField[]; authKey?: string } {
+  const seen = new Set<string>()
+  const usedRoles = new Set<BodyFieldRole>()
+  const fields: BodyField[] = []
+  let authKey: string | undefined
+
+  for (const [rawKey, value] of Object.entries(record)) {
+    const key = rawKey.trim()
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    if (isAuthFieldKey(key)) {
+      authKey ??= key
+      continue
+    }
+    const inferred = inferFieldRole(key)
+    const role =
+      inferred !== "custom" && !usedRoles.has(inferred) ? inferred : ("custom" as const)
+    if (role !== "custom") usedRoles.add(role)
+    const known = HUNIKI_SHAPE.fields.find((field) => field.key === key)
+    fields.push({
+      key,
+      role: known?.role ?? role,
+      label: known?.label ?? humanizeFieldKey(key),
+      sample: sampleFromValue(value),
+    })
+  }
+
+  return { fields, authKey }
+}
+
+export function valuesFromShape(shape: TranslateShape = HUNIKI_SHAPE): FieldValues {
+  const values: FieldValues = {}
   for (const field of shape.fields) {
+    values[field.key] = field.sample
     values[field.role] = field.sample
   }
   return values
 }
 
-export function compileTranslateBody(shape: TranslateShape, values: FieldValues): string {
-  if (shape.id === "ghana") {
-    return JSON.stringify(
-      {
-        in: values.text.trim(),
-        lang: `${values.source.trim()}-${values.target.trim()}`,
-      },
-      null,
-      2,
-    )
-  }
+export const HUNIKI_LANGUAGE_PAIRS = HUNIKI_LANGUAGES.flatMap((source) =>
+  HUNIKI_LANGUAGES.map((target) => ({ source: source.code, target: target.code })),
+)
 
+export function valuesForLanguagePair(
+  values: FieldValues,
+  fields: readonly BodyField[],
+  pair: { source: string; target: string },
+): FieldValues {
+  const next = { ...values }
+  for (const field of fields) {
+    if (field.role === "source") next[field.key] = pair.source
+    if (field.role === "target") next[field.key] = pair.target
+  }
+  return next
+}
+
+export function compileTranslateBody(
+  shape: TranslateShape,
+  values: FieldValues,
+  apiKey?: string,
+  authKey = "api_key",
+): string {
   const body: Record<string, string> = {}
   for (const field of shape.fields) {
-    body[field.key] = values[field.role].trim()
+    const raw = (values[field.key] ?? values[field.role] ?? "").trim()
+    body[field.key] = field.role === "provider" ? (raw || field.sample || "ghananlp").toLowerCase() : raw
   }
+  const key = apiKey?.trim()
+  if (key) body[authKey] = key
   return JSON.stringify(body, null, 2)
 }
 
-export function translateBodyKeys(shape: TranslateShape): string[] {
-  if (shape.id === "ghana") return ["in", "lang"]
-  return shape.fields.map((field) => field.key)
-}
-
-export function inferDefaults(url: string): EndpointDefaults {
-  let path = ""
-  let host = ""
-  try {
-    const parsed = new URL(url)
-    path = parsed.pathname.toLowerCase()
-    host = parsed.hostname.toLowerCase()
-  } catch {
-    path = url.toLowerCase()
-    host = url.toLowerCase()
-  }
-
-  const ghana = host.includes("ghananlp") || host.includes("khaya") || isPracticeEndpoint(url)
-  const vulavula = host.includes("lelapa") || host.includes("vulavula")
-  const asr = /asr|transcribe|stt/.test(path)
-  const translate = /translate|translation/.test(path)
-  const languages = path.includes("languages")
-
+export function inferDefaults(): EndpointDefaults {
   return {
-    method:
-      languages && !translate
-        ? "GET"
-        : asr || translate || path.includes("/v2/")
-          ? "POST"
-          : languages
-            ? "GET"
-            : "POST",
-    authKind: "api_key",
-    headerName: ghana
-      ? "Ocp-Apim-Subscription-Key"
-      : vulavula
-        ? "X-CLIENT-TOKEN"
-        : "X-API-Key",
-    bodyKind: asr ? "asr" : translate || (!languages && !asr) ? "translate" : "none",
-    shape: ghana ? GHANA_SHAPE : vulavula ? VULAVULA_SHAPE : GENERIC_SHAPE,
+    method: "POST",
+    authKind: "body",
+    headerName: "api_key",
+    bodyKind: "translate",
+    shape: HUNIKI_SHAPE,
   }
 }
 
-export function isGhanaHost(url: string): boolean {
-  if (isPracticeEndpoint(url)) return true
-  try {
-    const host = new URL(url).hostname.toLowerCase()
-    return host.includes("ghananlp") || host.includes("khaya")
-  } catch {
-    return url.toLowerCase().includes("ghananlp")
-  }
+export function isHunikiProvider(value: string): value is HunikiProvider {
+  return HUNIKI_PROVIDERS.some((item) => item.value === value)
 }

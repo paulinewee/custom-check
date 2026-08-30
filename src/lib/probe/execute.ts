@@ -11,7 +11,7 @@ function applyAuth(request: TestRequest): { url: string; headers: Record<string,
   const url = new URL(request.url)
   const headers = { ...request.headers }
 
-  if (request.auth?.secret) {
+  if (request.auth?.secret && request.auth.kind !== "body") {
     if (request.auth.kind === "query") {
       url.searchParams.set(request.auth.queryName || "api_key", request.auth.secret)
     } else if (request.auth.kind === "bearer") {

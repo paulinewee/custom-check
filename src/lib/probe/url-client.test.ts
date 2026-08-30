@@ -1,6 +1,26 @@
 import { describe, expect, it } from "vitest"
 
-import { parseEndpointUrl, validateEndpointUrl } from "./url-client"
+import { normalizeEndpointUrl, parseEndpointUrl, validateEndpointUrl } from "./url-client"
+
+describe("normalizeEndpointUrl", () => {
+  it("adds https for a public host without a scheme", () => {
+    expect(normalizeEndpointUrl("api.huniki.ai/translate")).toBe(
+      "https://api.huniki.ai/translate",
+    )
+  })
+
+  it("adds http for localhost without a scheme", () => {
+    expect(normalizeEndpointUrl("localhost:3000/api/practice/translate")).toBe(
+      "http://localhost:3000/api/practice/translate",
+    )
+  })
+
+  it("leaves an existing scheme alone", () => {
+    expect(normalizeEndpointUrl("https://api.huniki.ai/translate")).toBe(
+      "https://api.huniki.ai/translate",
+    )
+  })
+})
 
 describe("validateEndpointUrl", () => {
   it("requires a value", () => {
@@ -8,10 +28,15 @@ describe("validateEndpointUrl", () => {
     expect(validateEndpointUrl("   ")).toBe("Enter an http(s) endpoint.")
   })
 
-  it("rejects non-URLs", () => {
-    expect(validateEndpointUrl("not-a-url")).toBe(
-      "That is not a valid URL. Enter a full address starting with http:// or https://.",
+  it("accepts a host without a scheme", () => {
+    expect(validateEndpointUrl("api.huniki.ai/translate")).toBeNull()
+    expect(parseEndpointUrl("api.huniki.ai/translate")?.href).toBe(
+      "https://api.huniki.ai/translate",
     )
+  })
+
+  it("rejects strings that are still not a URL after a scheme is added", () => {
+    expect(validateEndpointUrl("hello world")).toMatch(/not a valid URL/)
   })
 
   it("rejects non-http schemes", () => {
@@ -35,9 +60,10 @@ describe("validateEndpointUrl", () => {
   })
 
   it("allows the local practice endpoint", () => {
-    expect(validateEndpointUrl("http://localhost:3000/api/practice/v2/translate")).toBeNull()
-    expect(parseEndpointUrl("http://127.0.0.1:3000/api/practice/v2/languages")?.pathname).toBe(
-      "/api/practice/v2/languages",
+    expect(validateEndpointUrl("http://localhost:3000/api/practice/translate")).toBeNull()
+    expect(validateEndpointUrl("localhost:3000/api/practice/translate")).toBeNull()
+    expect(parseEndpointUrl("http://127.0.0.1:3000/api/practice/translate")?.pathname).toBe(
+      "/api/practice/translate",
     )
   })
 })

@@ -2,9 +2,8 @@ import { describe, expect, it } from "vitest"
 
 import { RUN_TIMEOUT_MAX_MS } from "./constants"
 import {
+  firstCustomizeError,
   validateContentType,
-  validateJsonBody,
-  validateLangPair,
   validateLanguageCode,
   validateLatencyMs,
   validateRequestForm,
@@ -14,8 +13,8 @@ import {
 
 describe("validateSecret", () => {
   it("requires a token", () => {
-    expect(validateSecret("")).toMatch(/Enter an authentication token/)
-    expect(validateSecret("   ")).toMatch(/Enter an authentication token/)
+    expect(validateSecret("")).toMatch(/Enter an API key/)
+    expect(validateSecret("   ")).toMatch(/Enter an API key/)
   })
 
   it("accepts a non-empty token", () => {
@@ -30,18 +29,6 @@ describe("validateTranslateText", () => {
 
   it("accepts a phrase", () => {
     expect(validateTranslateText("Hello")).toBeNull()
-  })
-})
-
-describe("validateLangPair", () => {
-  it("requires a pair", () => {
-    expect(validateLangPair("")).toMatch(/lang pair/)
-    expect(validateLangPair("en")).toMatch(/not valid/)
-  })
-
-  it("accepts a source-target pair", () => {
-    expect(validateLangPair("en-tw")).toBeNull()
-    expect(validateLangPair("zh-Hans")).toBeNull()
   })
 })
 
@@ -60,20 +47,6 @@ describe("validateLanguageCode", () => {
     expect(validateLanguageCode("tw", "target")).toBeNull()
     expect(validateLanguageCode("gaa", "source")).toBeNull()
     expect(validateLanguageCode("zh-Hans", "target")).toBeNull()
-  })
-})
-
-describe("validateJsonBody", () => {
-  it("requires a body", () => {
-    expect(validateJsonBody("")).toMatch(/Enter a JSON body/)
-  })
-
-  it("rejects invalid JSON", () => {
-    expect(validateJsonBody("{")).toMatch(/not valid JSON/)
-  })
-
-  it("accepts an object", () => {
-    expect(validateJsonBody('{"in":"Hello","lang":"en-tw"}')).toBeNull()
   })
 })
 
@@ -104,18 +77,16 @@ describe("validateLatencyMs", () => {
 
 describe("validateRequestForm", () => {
   const fields = [
-    { key: "in", role: "text" as const, label: "Input", sample: "Hello", tip: "" },
-    { key: "source", role: "source" as const, label: "Source Language", sample: "en", tip: "" },
-    { key: "target", role: "target" as const, label: "Target Language", sample: "tw", tip: "" },
+    { key: "text", role: "text" as const, label: "Input", sample: "Hello" },
+    { key: "source", role: "source" as const, label: "Source Language", sample: "en" },
+    { key: "target", role: "target" as const, label: "Target Language", sample: "tw" },
+    { key: "api_name", role: "provider" as const, label: "Provider", sample: "ghananlp" },
   ]
   const base = {
     method: "POST" as const,
     bodyKind: "translate" as const,
     fields,
-    rawMode: false,
-    values: { text: "Hello", source: "en", target: "tw", lang: "" },
-    rawBody: "",
-    defaultBody: '{"in":"Hello","lang":"en-tw"}',
+    values: { text: "Hello", source: "en", target: "tw", provider: "ghananlp" },
     contentType: "application/json",
     latencyMs: "2000",
   }
@@ -134,12 +105,6 @@ describe("validateRequestForm", () => {
     expect(next.errors.source).toMatch(/not valid/)
   })
 
-  it("validates raw JSON instead of structured fields", () => {
-    const next = validateRequestForm({ ...base, rawMode: true, rawBody: "{" })
-    expect(next.firstId).toBe("raw-body")
-    expect(next.errors.text).toBeUndefined()
-  })
-
   it("skips body checks for GET", () => {
     const next = validateRequestForm({
       ...base,
@@ -148,5 +113,23 @@ describe("validateRequestForm", () => {
     })
     expect(next.errors.text).toBeUndefined()
     expect(next.firstId).toBeNull()
+  })
+
+  it("ignores latency when finding the first customize error", () => {
+    const next = validateRequestForm({ ...base, latencyMs: "0" })
+    expect(next.firstId).toBe("latency")
+    expect(firstCustomizeError(next.errors)).toBeNull()
+  })
+
+  it("allows a pair-count above the usual request cap", () => {
+    const next = validateRequestForm({
+      ...base,
+      requestCount: "400",
+      allLanguagePairs: true,
+    })
+    expect(next.errors.count).toBeUndefined()
+    expect(validateRequestForm({ ...base, requestCount: "400" }).errors.count).toMatch(
+      /20 requests or fewer/,
+    )
   })
 })
