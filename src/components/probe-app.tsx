@@ -3,49 +3,48 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { Check, ChevronDown, CircleHelp, LoaderCircle, TriangleAlert, X } from "lucide-react"
 
-import { CodeBlock } from "@/components/code-block"
+import { CodeBlock, highlightCurl } from "@/components/code-block"
 import { useSavedTests } from "@/components/saved-tests-context"
+import { useCheckSettings } from "@/components/settings-context"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field"
+import { Field, FieldError, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Separator } from "@/components/ui/separator"
 import { Textarea } from "@/components/ui/textarea"
 import { collectShape, parseJson } from "@/lib/probe/assert"
 import {
-  DEFAULT_GAP_MS,
   DEFAULT_LATENCY_MS,
   DEFAULT_REQUEST_COUNT,
-  MAX_GAP_MS,
   MAX_REQUESTS,
-  RUN_TIMEOUT_MAX_MS,
 } from "@/lib/probe/constants"
 import {
   compileTranslateBody,
+  HUNIKI_LANGUAGES,
+  HUNIKI_PROVIDERS,
+  HUNIKI_LANGUAGE_PAIRS,
   inferDefaults,
-  translateBodyKeys,
+  valuesForLanguagePair,
   valuesFromShape,
+  type BodyField,
   type BodyFieldRole,
   type FieldValues,
 } from "@/lib/probe/defaults"
-import {
-  inferLanguagesUrl,
-  languagePairOptions,
-  parseLanguages,
-  type LanguageOption,
-} from "@/lib/probe/languages"
-import { formatMs } from "@/lib/format"
+import { APP_DESCRIPTION, APP_HEADLINE } from "@/lib/brand"
+import { formatMs, formatTextStats } from "@/lib/format"
+import { cn } from "@/lib/utils"
 import { buildCurl } from "@/lib/probe/preview"
-import { validateEndpointUrl } from "@/lib/probe/url-client"
+import { normalizeEndpointUrl, validateEndpointUrl } from "@/lib/probe/url-client"
 import {
+  firstCustomizeError,
   validateRequestForm,
   validateSecret,
   type RequestFieldId,
 } from "@/lib/probe/validate-form"
 import type {
   Assertion,
-  AuthKind,
   Dimension,
-  HistoryEntry,
   SendMode,
   TestRequest,
   TestResult,
@@ -54,22 +53,85 @@ import type {
 type AuthPhase = "idle" | "checking" | "valid" | "invalid"
 
 const CHOICE_CHIP =
-  "inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-border px-2.5 text-sm has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
+  "inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-border px-2.5 text-sm transition-transform duration-[160ms] ease-out active:scale-[0.97] has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
 
 const CHOICE_RADIO =
   "size-3.5 appearance-none rounded-full border border-zinc-300 bg-transparent dark:border-zinc-600 checked:border-zinc-400 checked:bg-[radial-gradient(circle,theme(colors.zinc.400)_38%,transparent_42%)] dark:checked:border-zinc-500 dark:checked:bg-[radial-gradient(circle,theme(colors.zinc.400)_38%,transparent_42%)]"
 
-const SELECT_CLASS =
-  "h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 font-mono text-base transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40"
-
-function optionsForLanguageField(role: BodyFieldRole, languages: LanguageOption[]) {
-  if (role === "text") return []
-  if (role === "lang") return languagePairOptions(languages)
-  return languages
+function emptyAssertion(path: string): Assertion {
+  return { path, kind: "nonempty" }
 }
 
-function optionLabel(option: LanguageOption) {
-  return option.name === option.code ? option.code : `${option.name} (${option.code})`
+function optionsForField(role: BodyFieldRole) {
+  if (role === "provider") {
+    return HUNIKI_PROVIDERS.map((item) => ({ value: item.value, label: item.label }))
+  }
+  if (role === "source" || role === "target") {
+    return HUNIKI_LANGUAGES.map((item) => ({ value: item.code, label: item.name }))
+  }
+  return []
+}
+
+function previewRequestCount(value: string) {
+  const count = Number(value)
+  if (!Number.isFinite(count) || count < 1) return 1
+  return Math.min(MAX_REQUESTS, Math.floor(count))
+}
+
+function isMultipleRequests(value: string) {
+  const count = Number(value)
+  return Number.isFinite(count) && count > 1
+}
+
+function curlFirstLine(curl: string) {
+  return (curl.split("\n")[0] ?? curl).replace(/\s*\\$/, "").trimEnd()
+}
+
+function curlRest(curl: string) {
+  const index = curl.indexOf("\n")
+  return index === -1 ? "" : curl.slice(index + 1)
+}
+
+function HighlightedCurl({ code }: { code: string }) {
+  return highlightCurl(code).map((part, index) => (
+    <span key={index} className={part.className}>
+      {part.text}
+    </span>
+  ))
+}
+
+function RequestPreviewList({ curls }: { curls: string[] }) {
+  return (
+    <div className="max-h-[28rem] overflow-auto overscroll-contain">
+      {curls.map((curl, index) => {
+        const firstLine = curlFirstLine(curl)
+        const rest = curlRest(curl)
+        return (
+          <details
+            key={index}
+            className="group border-b border-border last:border-b-0"
+          >
+            <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-2.5 text-xs focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none [&::-webkit-details-marker]:hidden">
+              <span className="min-w-0 flex-1 truncate font-mono">
+                <HighlightedCurl code={firstLine} />
+              </span>
+              <ChevronDown className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-[160ms] ease-out -rotate-90 group-open:rotate-0" />
+            </summary>
+            {rest ? (
+              <pre
+                translate="no"
+                className="max-h-56 overflow-auto overscroll-contain px-4 pb-3 font-mono text-xs break-words whitespace-pre-wrap text-foreground"
+              >
+                <code>
+                  <HighlightedCurl code={rest} />
+                </code>
+              </pre>
+            ) : null}
+          </details>
+        )
+      })}
+    </div>
+  )
 }
 
 const DIMENSION_LABEL: Record<Dimension, string> = {
@@ -108,7 +170,7 @@ const HEALTH_CHECKS = [
     key: "latency",
     title: "Response time",
     tipLabel: "About response time",
-    tip: "How long the provider took. Over the threshold counts as degraded even if the body is correct.",
+    tip: "How long the provider took to return a response.",
   },
 ] as const satisfies ReadonlyArray<{
   key: keyof TestResult["health"]
@@ -133,22 +195,129 @@ function tokenAccepted(result: TestResult) {
   return result.health.authenticated === "pass"
 }
 
-function resultCardTitle(result: TestResult) {
-  const duration = result.response ? formatMs(result.response.durationMs) : null
+function averageDurationMs(runs: TestResult[]) {
+  const durations = runs
+    .map((item) => item.response?.durationMs)
+    .filter((value): value is number => typeof value === "number")
+  if (durations.length === 0) return null
+  return Math.round(durations.reduce((sum, value) => sum + value, 0) / durations.length)
+}
+
+function resultCardTitle(result: TestResult, durationMs?: number | null) {
+  const duration =
+    durationMs != null
+      ? formatMs(durationMs)
+      : result.response
+        ? formatMs(result.response.durationMs)
+        : null
   if (result.overall === "healthy" || result.overall === "degraded") {
     return duration ? `Your request succeeded in ${duration}` : "Your request succeeded"
   }
   return result.diagnosis.title
 }
 
+function RunResultsTable({
+  runs,
+  selectedIndex,
+  onSelect,
+}: {
+  runs: TestResult[]
+  selectedIndex: number
+  onSelect: (index: number) => void
+}) {
+  const rowRefs = useRef<(HTMLTableRowElement | null)[]>([])
+
+  function moveTo(index: number) {
+    const next = Math.min(runs.length - 1, Math.max(0, index))
+    onSelect(next)
+    rowRefs.current[next]?.focus()
+  }
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-border bg-muted/40">
+      <table aria-label="Request results" className="w-full text-xs">
+        <caption className="sr-only">
+          Select a row to inspect that response.
+        </caption>
+        <thead>
+          <tr className="border-b border-border text-left text-muted-foreground">
+            <th scope="col" className="w-10 px-3 py-2 font-medium">
+              #
+            </th>
+            <th scope="col" className="px-3 py-2 font-medium">
+              Status
+            </th>
+            <th scope="col" className="px-3 py-2 font-medium">
+              Time
+            </th>
+            <th scope="col" className="px-3 py-2 font-medium">
+              Result
+            </th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border/70 font-mono tabular-nums">
+          {runs.map((item, index) => (
+            <tr
+              key={`${item.response?.durationMs ?? 0}-${index}`}
+              ref={(node) => {
+                rowRefs.current[index] = node
+              }}
+              tabIndex={0}
+              aria-selected={index === selectedIndex}
+              aria-label={`Request ${index + 1}, ${item.response?.status ?? "no status"}, ${
+                item.response ? formatMs(item.response.durationMs) : "no time"
+              }, ${item.overall}`}
+              className={cn(
+                "cursor-pointer outline-none focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:ring-inset",
+                index === selectedIndex ? "bg-background" : "hover:bg-background/70",
+              )}
+              onClick={() => onSelect(index)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault()
+                  onSelect(index)
+                  return
+                }
+                if (event.key === "ArrowDown") {
+                  event.preventDefault()
+                  moveTo(index + 1)
+                  return
+                }
+                if (event.key === "ArrowUp") {
+                  event.preventDefault()
+                  moveTo(index - 1)
+                  return
+                }
+                if (event.key === "Home") {
+                  event.preventDefault()
+                  moveTo(0)
+                  return
+                }
+                if (event.key === "End") {
+                  event.preventDefault()
+                  moveTo(runs.length - 1)
+                }
+              }}
+            >
+              <td className="px-3 py-1.5 text-muted-foreground">{index + 1}</td>
+              <td className="px-3 py-1.5">{item.response?.status ?? "—"}</td>
+              <td className="px-3 py-1.5">{item.response ? formatMs(item.response.durationMs) : "—"}</td>
+              <td className="px-3 py-1.5">{item.overall}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 function explainHealth(
   key: (typeof HEALTH_CHECKS)[number]["key"],
   result: TestResult,
-  latencyMs: string,
+  durationMs?: number | null,
 ): string {
   const status = result.response?.status
-  const duration = result.response?.durationMs
-  const threshold = Number(latencyMs) || DEFAULT_LATENCY_MS
+  const duration = durationMs ?? result.response?.durationMs
   const value = result.health[key]
 
   if (key === "reachable") {
@@ -196,10 +365,10 @@ function explainHealth(
   }
 
   if (value === "pass" && duration != null) {
-    return `The response arrived in ${formatMs(duration)}, under the ${threshold} ms threshold`
+    return `The response arrived in ${formatMs(duration)}`
   }
   if (value === "warn" && duration != null) {
-    return `The response took ${formatMs(duration)}, over the ${threshold} ms threshold`
+    return `The response took ${formatMs(duration)}`
   }
   if (value === "fail") {
     return "We did not get a timed response"
@@ -285,11 +454,10 @@ function InfoTip({
         <span
           id={id}
           role="note"
-          className={
-            align === "end"
-              ? "absolute top-[calc(100%+6px)] right-0 z-50 w-64 rounded-md border border-border bg-popover px-3 py-2 text-xs leading-relaxed text-pretty text-popover-foreground shadow-md"
-              : "absolute top-[calc(100%+6px)] left-0 z-50 w-64 rounded-md border border-border bg-popover px-3 py-2 text-xs leading-relaxed text-pretty text-popover-foreground shadow-md"
-          }
+          className={cn(
+            "absolute top-[calc(100%+6px)] z-50 w-64 rounded-md border border-border bg-popover px-2 py-1.5 text-xs leading-snug text-pretty text-popover-foreground shadow-md transition-[opacity,transform] duration-[160ms] ease-out starting:scale-[0.97] starting:opacity-0",
+            align === "end" ? "right-0 origin-top-right" : "left-0 origin-top-left",
+          )}
         >
           {children}
         </span>
@@ -298,61 +466,38 @@ function InfoTip({
   )
 }
 
-function LabelTip({
-  htmlFor,
-  label,
-  tipLabel,
-  children,
-}: {
-  htmlFor: string
-  label: string
-  tipLabel: string
-  children: string
-}) {
-  return (
-    <div className="flex items-center gap-1.5">
-      <FieldLabel htmlFor={htmlFor}>{label}</FieldLabel>
-      <InfoTip label={tipLabel}>{children}</InfoTip>
-    </div>
-  )
-}
-
 export function ProbeApp({ initialUrl }: { initialUrl: string }) {
   const abortRef = useRef<AbortController | null>(null)
-  const languagesAbortRef = useRef<AbortController | null>(null)
   const pendingFocusRef = useRef<string | null>(null)
   const checkTimerRef = useRef<number>(0)
   const lastCheckedSecret = useRef("")
   const { saveTest, pendingLoad, consumePendingLoad } = useSavedTests()
-  const inferred = inferDefaults(initialUrl)
+  const { settings } = useCheckSettings()
+  const inferredShape = settings.shape
 
   const [url, setUrl] = useState(initialUrl)
   const method = "POST" as const
   const [urlError, setUrlError] = useState<string | null>(
     initialUrl ? validateEndpointUrl(initialUrl) : null,
   )
-  const [authKind, setAuthKind] = useState<AuthKind>(inferred.authKind)
-  const [headerName, setHeaderName] = useState(inferred.headerName)
-  const queryName = "api_key"
   const [secret, setSecret] = useState("")
   const [authPhase, setAuthPhase] = useState<AuthPhase>("idle")
   const [authOpen, setAuthOpen] = useState(true)
   const [authError, setAuthError] = useState<string | null>(null)
-  const [contentType, setContentType] = useState("application/json")
-  const [extraHeader, setExtraHeader] = useState({ key: "", value: "" })
-  const [values, setValues] = useState<FieldValues>(() => valuesFromShape(inferred.shape))
-  const [languages, setLanguages] = useState<LanguageOption[]>([])
-  const [languagesLoading, setLanguagesLoading] = useState(false)
-  const [rawBody, setRawBody] = useState("")
-  const [rawMode, setRawMode] = useState(false)
-  const [latencyMs, setLatencyMs] = useState(String(DEFAULT_LATENCY_MS))
+  const contentType = "application/json"
+  const [values, setValues] = useState<FieldValues>(() => valuesFromShape(inferredShape))
+  const [requestTab, setRequestTab] = useState<"fields" | "preview">("fields")
+  const latencyMs = String(settings.latencyMs || DEFAULT_LATENCY_MS)
   const [requestCount, setRequestCount] = useState(String(DEFAULT_REQUEST_COUNT))
+  const [allLanguagePairs, setAllLanguagePairs] = useState(false)
+  const savedRequestCountRef = useRef(String(DEFAULT_REQUEST_COUNT))
   const [sendMode, setSendMode] = useState<SendMode>("sequential")
-  const [gapMs, setGapMs] = useState(String(DEFAULT_GAP_MS))
-  const [assertions, setAssertions] = useState<Assertion[]>([])
+  const [assertions, setAssertions] = useState<Assertion[]>(() =>
+    settings.flagEmpty ? [emptyAssertion(settings.emptyPath)] : [],
+  )
   const [result, setResult] = useState<TestResult | null>(null)
   const [runs, setRuns] = useState<TestResult[]>([])
-  const [history, setHistory] = useState<HistoryEntry[]>([])
+  const [selectedRunIndex, setSelectedRunIndex] = useState(0)
   const [previousShape, setPreviousShape] = useState<string[]>([])
   const [testing, setTesting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -360,9 +505,36 @@ export function ProbeApp({ initialUrl }: { initialUrl: string }) {
   const [requestTouched, setRequestTouched] = useState<Partial<Record<RequestFieldId, boolean>>>({})
   const [requestErrorsVisible, setRequestErrorsVisible] = useState(false)
 
-  const defaults = useMemo(() => inferDefaults(url), [url])
-  const defaultBody = compileTranslateBody(defaults.shape, values)
-  const bodyText = rawMode ? rawBody || defaultBody : defaultBody
+  const defaults = useMemo(
+    () => ({
+      ...inferDefaults(),
+      shape: settings.shape,
+      authKind: settings.authKind,
+      headerName: settings.authKey,
+    }),
+    [settings.authKey, settings.authKind, settings.shape],
+  )
+  const providerField = defaults.shape.fields.find((field) => field.role === "provider")
+  const customizeFields = defaults.shape.fields.filter((field) => field.role !== "provider")
+  const languageFields = customizeFields.filter((field) => field.role === "source" || field.role === "target")
+  const otherCustomizeFields = customizeFields.filter(
+    (field) => field.role !== "source" && field.role !== "target",
+  )
+  const canTestAllPairs =
+    languageFields.some((field) => field.role === "source") &&
+    languageFields.some((field) => field.role === "target")
+  const allPairsActive = allLanguagePairs && canTestAllPairs
+  const defaultBody = compileTranslateBody(defaults.shape, values, secret, settings.authKey)
+  const settingsFingerprint = JSON.stringify({
+    shape: settings.shape,
+    emptyPath: settings.emptyPath,
+    flagEmpty: settings.flagEmpty,
+  })
+
+  useEffect(() => {
+    setValues(valuesFromShape(settings.shape))
+    setAssertions(settings.flagEmpty ? [emptyAssertion(settings.emptyPath)] : [])
+  }, [settingsFingerprint])
   const hasEndpoint = url.trim().length > 0 && !urlError
   const authOk = authPhase === "valid"
   const requestValidation = useMemo(
@@ -371,69 +543,92 @@ export function ProbeApp({ initialUrl }: { initialUrl: string }) {
         method,
         bodyKind: defaults.bodyKind,
         fields: defaults.shape.fields,
-        rawMode,
         values,
-        rawBody,
-        defaultBody,
         contentType,
         latencyMs,
         requestCount,
-        sendMode,
-        gapMs,
+        allLanguagePairs: allLanguagePairs && canTestAllPairs,
       }),
     [
+      allLanguagePairs,
+      canTestAllPairs,
       contentType,
-      defaultBody,
       defaults.bodyKind,
       defaults.shape.fields,
-      gapMs,
       latencyMs,
       method,
-      rawBody,
-      rawMode,
       requestCount,
-      sendMode,
       values,
     ],
   )
 
   const request: TestRequest = useMemo(
     () => ({
-      url: url.trim(),
+      url: normalizeEndpointUrl(url),
       method,
       auth: secret
-        ? { kind: authKind, headerName, queryName, secret }
+        ? {
+            kind: defaults.authKind,
+            headerName: defaults.headerName,
+            queryName: settings.authKey,
+            secret,
+          }
         : undefined,
-      headers: {
-        ...(contentType ? { "Content-Type": contentType } : {}),
-        ...(extraHeader.key && extraHeader.value
-          ? { [extraHeader.key]: extraHeader.value }
-          : {}),
-      },
-      body: defaults.bodyKind !== "none" ? bodyText : undefined,
+      headers: { "Content-Type": contentType },
+      body: defaults.bodyKind !== "none" ? defaultBody : undefined,
       assertions,
       latencyMs: Number(latencyMs) || DEFAULT_LATENCY_MS,
     }),
     [
       assertions,
-      authKind,
-      bodyText,
       contentType,
+      defaultBody,
+      defaults.authKind,
       defaults.bodyKind,
-      extraHeader,
-      headerName,
+      defaults.headerName,
       latencyMs,
       method,
-      queryName,
       secret,
+      settings.authKey,
       url,
     ],
   )
 
   const curl = useMemo(() => buildCurl(request, true), [request])
+  const previewCurls = useMemo(() => {
+    if (!(allLanguagePairs && canTestAllPairs)) {
+      return Array.from({ length: previewRequestCount(requestCount) }, () => curl)
+    }
+    return HUNIKI_LANGUAGE_PAIRS.map((pair) =>
+      buildCurl(
+        {
+          ...request,
+          body: compileTranslateBody(
+            defaults.shape,
+            valuesForLanguagePair(values, defaults.shape.fields, pair),
+            secret,
+            settings.authKey,
+          ),
+        },
+        true,
+      ),
+    )
+  }, [
+    allLanguagePairs,
+    canTestAllPairs,
+    curl,
+    defaults.shape,
+    request,
+    requestCount,
+    secret,
+    settings.authKey,
+    values,
+  ])
+  const selectedResult = runs[selectedRunIndex] ?? result
+  const averageMs = averageDurationMs(runs.length > 0 ? runs : result ? [result] : [])
   const prettyBody = useMemo(
-    () => (result?.response ? pretty(result.response.body) : ""),
-    [result],
+    () => (selectedResult?.response ? pretty(selectedResult.response.body) : ""),
+    [selectedResult],
   )
 
   useEffect(() => {
@@ -445,10 +640,19 @@ export function ProbeApp({ initialUrl }: { initialUrl: string }) {
     return () => {
       skip?.removeEventListener("click", onSkip)
       abortRef.current?.abort()
-      languagesAbortRef.current?.abort()
       window.clearTimeout(checkTimerRef.current)
     }
   }, [])
+
+  useEffect(() => {
+    if (initialUrl) return
+    if (!window.matchMedia("(hover: hover) and (pointer: fine)").matches) return
+    document.getElementById("endpoint-url")?.focus()
+  }, [initialUrl])
+
+  useLayoutEffect(() => {
+    if (!initialUrl) document.getElementById("endpoint-url")?.focus()
+  }, [initialUrl])
 
   useLayoutEffect(() => {
     const id = pendingFocusRef.current
@@ -500,17 +704,13 @@ export function ProbeApp({ initialUrl }: { initialUrl: string }) {
     setUrlError(invalid)
     resetAuth()
     resetRequestErrors()
+    setAssertions(settings.flagEmpty ? [emptyAssertion(settings.emptyPath)] : [])
     setResult(null)
     setRuns([])
+    setSelectedRunIndex(0)
     if (value.trim()) {
-      const next = inferDefaults(value)
-      setHeaderName(next.headerName)
-      setAuthKind(next.authKind)
-      setValues(valuesFromShape(next.shape))
-      setLanguages([])
-      setLanguagesLoading(false)
-      setRawBody("")
-      setRawMode(false)
+      setValues(valuesFromShape(settings.shape))
+      setRequestTab("fields")
     }
   }
 
@@ -519,12 +719,25 @@ export function ProbeApp({ initialUrl }: { initialUrl: string }) {
     const loaded = consumePendingLoad()
     if (!loaded) return
     onUrlChange(loaded.url)
-    const next = inferDefaults(loaded.url)
-    setHeaderName(next.headerName)
-    setAuthKind(next.authKind)
     syncAddressBar(loaded.url)
     focusAfterPaint("endpoint-url")
   }, [consumePendingLoad, pendingLoad])
+
+  function showRequestError(firstId: RequestFieldId) {
+    setRequestErrorsVisible(true)
+    setRequestTab("fields")
+    if (firstId === "provider") {
+      setAuthOpen(true)
+      focusAfterPaint(providerField?.key ?? firstId)
+      return
+    }
+    if (firstId === "text" || firstId === "source" || firstId === "target") {
+      const field = customizeFields.find((item) => item.role === firstId)
+      focusAfterPaint(field?.key ?? firstId)
+      return
+    }
+    focusAfterPaint(firstId)
+  }
 
   function submitRequest() {
     const invalidUrl = validateEndpointUrl(url)
@@ -546,17 +759,9 @@ export function ProbeApp({ initialUrl }: { initialUrl: string }) {
 
     if (testing) return
 
-    const { firstId } = requestValidation
-    if (firstId) {
-      setRequestErrorsVisible(true)
-      if (firstId === "raw-body") setRawMode(true)
-      if (firstId === "text" || firstId === "source" || firstId === "target" || firstId === "lang") {
-        setRawMode(false)
-        const field = defaults.shape.fields.find((item) => item.role === firstId)
-        focusAfterPaint(field?.key ?? firstId)
-        return
-      }
-      focusAfterPaint(firstId)
+    const customizeId = firstCustomizeError(requestValidation.errors)
+    if (customizeId) {
+      showRequestError(customizeId)
       return
     }
 
@@ -577,76 +782,15 @@ export function ProbeApp({ initialUrl }: { initialUrl: string }) {
     return (await response.json()) as TestResult
   }
 
-  useEffect(() => {
-    if (!authOk || !hasEndpoint) {
-      setLanguages([])
-      setLanguagesLoading(false)
-      return
-    }
-
-    const languagesUrl = inferLanguagesUrl(url)
-    if (!languagesUrl) {
-      setLanguages([])
-      setLanguagesLoading(false)
-      return
-    }
-
-    const controller = new AbortController()
-    languagesAbortRef.current?.abort()
-    languagesAbortRef.current = controller
-    setLanguagesLoading(true)
-
-    void postTest(
-      {
-        url: languagesUrl,
-        method: "GET",
-        auth: secret ? { kind: authKind, headerName, queryName, secret } : undefined,
-        headers: {},
-        assertions: [],
-        latencyMs: DEFAULT_LATENCY_MS,
-      },
-      controller.signal,
-    )
-      .then((next) => {
-        if (controller.signal.aborted) return
-        setLanguages(parseLanguages(next.response?.body ?? ""))
-      })
-      .catch(() => {
-        if (controller.signal.aborted) return
-        setLanguages([])
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLanguagesLoading(false)
-      })
-
-    return () => controller.abort()
-    // Fetch whenever the accepted token or endpoint changes. Do not treat this as a submitted check.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authOk, authKind, hasEndpoint, headerName, secret, url])
-
   function finishRequestResults(payload: TestRequest, nextResults: TestResult[]) {
     const next = nextResults.at(-1)
     if (!next) return
     setRuns(nextResults)
     setResult(next)
+    setSelectedRunIndex(0)
     if (next.response) {
       setPreviousShape(collectShape(next.response.body))
     }
-    const durations = nextResults
-      .map((item) => item.response?.durationMs)
-      .filter((value): value is number => typeof value === "number")
-    setHistory((current) =>
-      [
-        {
-          id: crypto.randomUUID(),
-          at: Date.now(),
-          status: next.response?.status,
-          durationMs: durations.length ? Math.max(...durations) : 0,
-          overall: next.overall,
-        },
-        ...current,
-      ].slice(0, 5),
-    )
     saveTest({
       url: payload.url,
       method: payload.method,
@@ -654,7 +798,7 @@ export function ProbeApp({ initialUrl }: { initialUrl: string }) {
       title: next.diagnosis.title,
       explanation: next.diagnosis.explanation,
       status: next.response?.status,
-      durationMs: next.response?.durationMs ?? 0,
+      durationMs: averageDurationMs(nextResults) ?? next.response?.durationMs ?? 0,
     })
     focusAfterPaint("result-heading")
   }
@@ -706,31 +850,27 @@ export function ProbeApp({ initialUrl }: { initialUrl: string }) {
       }
 
       const count = Math.max(1, Number(requestCount) || 1)
-      const gap = Math.max(0, Number(gapMs) || 0)
+      const payloads = allPairsActive
+        ? HUNIKI_LANGUAGE_PAIRS.map((pair) => ({
+            ...payload,
+            body: compileTranslateBody(
+              defaults.shape,
+              valuesForLanguagePair(values, defaults.shape.fields, pair),
+              secret,
+              settings.authKey,
+            ),
+          }))
+        : Array.from({ length: count }, () => payload)
       let nextResults: TestResult[] = []
 
       if (sendMode === "parallel") {
         nextResults = await Promise.all(
-          Array.from({ length: count }, () => postTest(payload, controller.signal)),
+          payloads.map((item) => postTest(item, controller.signal)),
         )
       } else {
-        for (let index = 0; index < count; index += 1) {
+        for (const item of payloads) {
           if (controller.signal.aborted) return
-          if (index > 0 && sendMode === "delayed") {
-            await new Promise<void>((resolve, reject) => {
-              const timer = window.setTimeout(resolve, gap)
-              const onAbort = () => {
-                window.clearTimeout(timer)
-                reject(new DOMException("Aborted", "AbortError"))
-              }
-              if (controller.signal.aborted) {
-                onAbort()
-                return
-              }
-              controller.signal.addEventListener("abort", onAbort, { once: true })
-            })
-          }
-          nextResults.push(await postTest(payload, controller.signal))
+          nextResults.push(await postTest(item, controller.signal))
         }
       }
 
@@ -772,7 +912,19 @@ export function ProbeApp({ initialUrl }: { initialUrl: string }) {
     setAuthPhase("checking")
     setAuthError(null)
     checkTimerRef.current = window.setTimeout(() => {
-      void run({ ...request, auth: { kind: authKind, headerName, queryName, secret: value } }, "auth")
+      void run(
+        {
+          ...request,
+          body: compileTranslateBody(defaults.shape, values, value, settings.authKey),
+          auth: {
+            kind: defaults.authKind,
+            headerName: defaults.headerName,
+            queryName: settings.authKey,
+            secret: value,
+          },
+        },
+        "auth",
+      )
     }, 500)
   }
 
@@ -799,30 +951,119 @@ export function ProbeApp({ initialUrl }: { initialUrl: string }) {
     focusAfterPaint(authOk ? "test-request" : "secret")
   }
 
-  function toggleAssertion(assertion: Assertion, on: boolean) {
-    setAssertions((current) => {
-      const without = current.filter((item) => item.path !== assertion.path)
-      return on ? [...without, assertion] : without
-    })
+  function setFieldValue(key: string, value: string) {
+    setValues((current) => ({ ...current, [key]: value }))
+  }
+  const countError = shownRequestError("count")
+  function toggleAllLanguagePairs(on: boolean) {
+    if (on) {
+      savedRequestCountRef.current = requestCount
+      setRequestCount(String(HUNIKI_LANGUAGE_PAIRS.length))
+      setAllLanguagePairs(true)
+      touchRequest("count")
+      return
+    }
+    setAllLanguagePairs(false)
+    setRequestCount(savedRequestCountRef.current)
   }
 
-  function setFieldValue(role: BodyFieldRole, value: string) {
-    setValues((current) => ({ ...current, [role]: value }))
+  function renderCustomizeField(field: BodyField) {
+    const error = shownRequestError(field.role)
+    const options = optionsForField(field.role)
+    const value = values[field.key] ?? values[field.role] ?? ""
+    const useSelect = field.role !== "text" && options.length > 0
+    return (
+      <Field
+        key={field.key}
+        data-invalid={Boolean(error) || undefined}
+        className={field.role === "text" ? "sm:col-span-2" : undefined}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+          <FieldLabel htmlFor={field.key}>{field.label}</FieldLabel>
+          {field.role === "text" ? (
+            <span className="text-[11px] text-muted-foreground tabular-nums">
+              {formatTextStats(value)}
+            </span>
+          ) : null}
+        </div>
+        {useSelect ? (
+          <Select
+            id={field.key}
+            name={field.key}
+            value={value || null}
+            required
+            items={options.map((item) => ({
+              value: item.value,
+              label: item.label,
+            }))}
+            onValueChange={(next) => {
+              if (typeof next !== "string") return
+              setFieldValue(field.key, next)
+              touchRequest(field.role)
+            }}
+          >
+            <SelectTrigger
+              aria-invalid={Boolean(error) || undefined}
+              aria-describedby={error ? `${field.key}-error` : undefined}
+            >
+              <SelectValue placeholder={field.label} />
+            </SelectTrigger>
+            <SelectContent>
+              {options.map((item) => (
+                <SelectItem key={item.value} value={item.value}>
+                  {item.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : field.role === "text" ? (
+          <Textarea
+            id={field.key}
+            name={field.key}
+            value={value}
+            onChange={(event) => {
+              setFieldValue(field.key, event.target.value)
+              touchRequest(field.role)
+            }}
+            onBlur={() => touchRequest(field.role)}
+            required
+            placeholder={field.sample}
+            aria-invalid={Boolean(error)}
+            aria-describedby={error ? `${field.key}-error` : undefined}
+            className="min-h-24 max-h-48 resize-y overflow-y-auto"
+          />
+        ) : (
+          <Input
+            id={field.key}
+            name={field.key}
+            value={value}
+            onChange={(event) => {
+              setFieldValue(field.key, event.target.value)
+              touchRequest(field.role)
+            }}
+            onBlur={() => touchRequest(field.role)}
+            required
+            autoComplete="off"
+            spellCheck={false}
+            placeholder={field.sample}
+            aria-invalid={Boolean(error)}
+            aria-describedby={error ? `${field.key}-error` : undefined}
+            className="font-mono"
+          />
+        )}
+        {error ? <FieldError id={`${field.key}-error`}>{error}</FieldError> : null}
+      </Field>
+    )
   }
-  const rawBodyError = shownRequestError("raw-body")
-  const contentTypeError = shownRequestError("content-type")
-  const latencyError = shownRequestError("latency")
-  const countError = shownRequestError("count")
-  const gapError = shownRequestError("gap")
 
   return (
     <div className="space-y-8">
       <header className="space-y-2">
-        <h1 className="text-pretty text-2xl font-semibold tracking-tight">
-          Run a custom check on an endpoint
+        <h1 className="scroll-mt-6 text-pretty text-2xl font-semibold tracking-tight">
+          {APP_HEADLINE}
         </h1>
         <p className="max-w-xl text-pretty text-sm text-muted-foreground">
-          Create custom requests to test an endpoint for your workflow.
+          {APP_DESCRIPTION}
         </p>
       </header>
 
@@ -838,7 +1079,7 @@ export function ProbeApp({ initialUrl }: { initialUrl: string }) {
           <Input
             id="endpoint-url"
             name="url"
-            type="url"
+            type="text"
             inputMode="url"
             autoComplete="url"
             spellCheck={false}
@@ -850,11 +1091,13 @@ export function ProbeApp({ initialUrl }: { initialUrl: string }) {
             aria-describedby={urlError ? "endpoint-url-error" : undefined}
             onChange={(event) => onUrlChange(event.target.value)}
             onBlur={() => {
-              const invalid = validateEndpointUrl(url)
+              const next = normalizeEndpointUrl(url)
+              if (next !== url) setUrl(next)
+              const invalid = next ? validateEndpointUrl(next) : "Enter an http(s) endpoint."
               setUrlError(invalid)
-              if (!invalid) syncAddressBar(url)
+              if (!invalid) syncAddressBar(next)
             }}
-            className="font-mono text-xs md:text-xs"
+            className="h-9"
           />
           {urlError ? <FieldError id="endpoint-url-error">{urlError}</FieldError> : null}
         </Field>
@@ -862,17 +1105,13 @@ export function ProbeApp({ initialUrl }: { initialUrl: string }) {
         {hasEndpoint ? (
           <section
             aria-labelledby="auth-heading"
-            className="rounded-xl border border-border bg-card"
+            className="motion-enter rounded-xl border border-border bg-card"
           >
             {authOk && !authOpen ? (
-              <div className="flex items-center justify-between gap-3 px-4 py-3">
+              <div className="motion-enter flex items-center justify-between gap-3 px-4 py-3">
                 <span id="auth-heading" className="flex items-center gap-2 text-sm font-medium">
                   <Check className="size-4 text-emerald-500" aria-hidden />
-                  Authentication Token
-                  <InfoTip label="About authentication tokens">
-                    A secret the provider issued for this product. We send it with the request and
-                    check whether the service accepts it.
-                  </InfoTip>
+                  Provider and Authentication Token
                 </span>
                 <button
                   type="button"
@@ -880,9 +1119,9 @@ export function ProbeApp({ initialUrl }: { initialUrl: string }) {
                   aria-controls="auth-fields"
                   onClick={() => {
                     setAuthOpen(true)
-                    focusAfterPaint("secret")
+                    focusAfterPaint(providerField?.key ?? "secret")
                   }}
-                  className="rounded-sm text-muted-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                  className="relative inline-flex size-8 items-center justify-center rounded-md text-muted-foreground outline-none after:absolute after:-inset-1.5 hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
                 >
                   <span className="sr-only">Expand authentication</span>
                   <ChevronDown className="size-4" aria-hidden />
@@ -891,12 +1130,8 @@ export function ProbeApp({ initialUrl }: { initialUrl: string }) {
             ) : (
               <div id="auth-fields" className="space-y-3 px-4 py-4">
                 <div className="flex items-start justify-between gap-3">
-                  <h2 id="auth-heading" className="flex items-start gap-1.5 text-pretty text-sm font-medium">
-                    Your endpoint requires an authentication token.
-                    <InfoTip label="About authentication tokens">
-                      A secret the provider issued for this product. We send it with the request and
-                      check whether the service accepts it.
-                    </InfoTip>
+                  <h2 id="auth-heading" className="text-pretty text-sm font-medium">
+                    Your endpoint requires a provider and an authentication token.
                   </h2>
                   {authOk ? (
                     <button
@@ -904,14 +1139,53 @@ export function ProbeApp({ initialUrl }: { initialUrl: string }) {
                       aria-expanded={true}
                       aria-controls="auth-fields"
                       onClick={() => setAuthOpen(false)}
-                      className="rounded-sm text-muted-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                      className="relative inline-flex size-8 items-center justify-center rounded-md text-muted-foreground outline-none after:absolute after:-inset-1.5 hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
                     >
                       <span className="sr-only">Collapse authentication</span>
                       <ChevronDown className="size-4 rotate-180" aria-hidden />
                     </button>
                   ) : null}
                 </div>
+                {providerField ? (
+                  <Field data-invalid={Boolean(shownRequestError("provider")) || undefined}>
+                    <FieldLabel htmlFor={providerField.key}>{providerField.label}</FieldLabel>
+                    <Select
+                      id={providerField.key}
+                      name={providerField.key}
+                      value={values[providerField.key] || values.provider || null}
+                      required
+                      items={optionsForField("provider")}
+                      onValueChange={(next) => {
+                        if (typeof next !== "string") return
+                        setFieldValue(providerField.key, next)
+                        touchRequest("provider")
+                      }}
+                    >
+                      <SelectTrigger
+                        aria-invalid={Boolean(shownRequestError("provider")) || undefined}
+                        aria-describedby={
+                          shownRequestError("provider") ? `${providerField.key}-error` : undefined
+                        }
+                      >
+                        <SelectValue placeholder={providerField.label} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {optionsForField("provider").map((item) => (
+                          <SelectItem key={item.value} value={item.value}>
+                            {item.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {shownRequestError("provider") ? (
+                      <FieldError id={`${providerField.key}-error`}>
+                        {shownRequestError("provider")}
+                      </FieldError>
+                    ) : null}
+                  </Field>
+                ) : null}
                 <Field>
+                  <FieldLabel htmlFor="secret">Authentication token</FieldLabel>
                   <div className="relative">
                     <Input
                       id="secret"
@@ -931,18 +1205,17 @@ export function ProbeApp({ initialUrl }: { initialUrl: string }) {
                       spellCheck={false}
                       required
                       placeholder="eyJhbGci…"
-                      aria-label="Authentication token"
                       aria-invalid={authPhase === "invalid"}
                       aria-describedby={
                         authError ? "auth-error" : authPhase === "checking" ? "auth-status" : undefined
                       }
                       aria-busy={authPhase === "checking"}
-                      className="pr-8 font-mono text-xs md:text-xs"
+                      className="pr-8 font-mono text-base md:text-xs"
                     />
                     <span className="pointer-events-none absolute top-2 right-2">
                       {authPhase === "checking" ? (
                         <LoaderCircle
-                          className="size-3.5 animate-spin text-muted-foreground"
+                          className="size-3.5 text-muted-foreground motion-safe:animate-spin"
                           aria-hidden
                         />
                       ) : null}
@@ -964,178 +1237,55 @@ export function ProbeApp({ initialUrl }: { initialUrl: string }) {
         {hasEndpoint && authOk ? (
           <section
             aria-labelledby="request-heading"
-            className="space-y-4 rounded-xl border border-border bg-card px-4 py-4"
+            className="motion-enter overflow-hidden rounded-xl border border-border bg-card"
           >
-            <div className="space-y-1">
-              <h2
-                id="request-heading"
-                tabIndex={-1}
-                className="flex items-center gap-1.5 text-sm font-medium outline-none"
-              >
-                Customize your check
-                <InfoTip label="About this check">
-                  Change the sample we send. Use this to see if the service still works for the
-                  phrase and languages you care about.
-                </InfoTip>
-              </h2>
-              <p className="text-pretty text-sm text-muted-foreground">
-                Customize your request and payload
-              </p>
-            </div>
+            <div>
+            <h2
+              id="request-heading"
+              tabIndex={-1}
+              className="scroll-mt-6 px-4 py-4 text-sm font-medium outline-none"
+            >
+              Customize your test
+            </h2>
+            <Separator />
 
-            <div className="space-y-3">
-                <div className="flex justify-end">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="xs"
-                    aria-pressed={rawMode}
-                    onClick={() => setRawMode((on) => !on)}
-                  >
-                    {rawMode ? "Use fields" : "Edit JSON"}
-                  </Button>
-                </div>
-                    {rawMode ? (
-                      <Field data-invalid={Boolean(rawBodyError) || undefined}>
-                        <LabelTip
-                          htmlFor="raw-body"
-                          label="JSON"
-                          tipLabel="About the JSON"
-                        >
-                          {`The raw body we send. Keys for this API are ${translateBodyKeys(
-                            defaults.shape,
-                          ).join(", ")}.`}
-                        </LabelTip>
-                        <Textarea
-                          id="raw-body"
-                          name="rawBody"
-                          value={rawBody || defaultBody}
-                          onChange={(event) => {
-                            setRawBody(event.target.value)
-                            touchRequest("raw-body")
-                          }}
-                          onBlur={() => touchRequest("raw-body")}
-                          required
-                          spellCheck={false}
-                          aria-invalid={Boolean(rawBodyError)}
-                          aria-describedby={rawBodyError ? "raw-body-error" : undefined}
-                          className="min-h-32 font-mono text-xs"
-                        />
-                        {rawBodyError ? (
-                          <FieldError id="raw-body-error">{rawBodyError}</FieldError>
-                        ) : null}
-                      </Field>
-                    ) : (
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        {defaults.shape.fields.map((field) => {
-                          const error = shownRequestError(field.role)
-                          const options = optionsForLanguageField(field.role, languages)
-                          const value = values[field.role]
-                          const useSelect =
-                            field.role !== "text" && (options.length > 0 || languagesLoading)
-                          return (
-                            <Field
-                              key={field.key}
-                              data-invalid={Boolean(error) || undefined}
-                              className={field.role === "text" ? "sm:col-span-2" : undefined}
-                            >
-                              <LabelTip
-                                htmlFor={field.key}
-                                label={field.label}
-                                tipLabel={`About ${field.label}`}
-                              >
-                                {field.tip}
-                              </LabelTip>
-                              {useSelect ? (
-                                <select
-                                  id={field.key}
-                                  name={field.key}
-                                  value={value}
-                                  required
-                                  disabled={languagesLoading && options.length === 0}
-                                  aria-busy={languagesLoading || undefined}
-                                  aria-invalid={Boolean(error)}
-                                  aria-describedby={error ? `${field.key}-error` : undefined}
-                                  onChange={(event) => {
-                                    setFieldValue(field.role, event.target.value)
-                                    touchRequest(field.role)
-                                  }}
-                                  onBlur={() => touchRequest(field.role)}
-                                  className={SELECT_CLASS}
-                                >
-                                  {languagesLoading && options.length === 0 ? (
-                                    <option value={value}>{value || "Loading languages…"}</option>
-                                  ) : null}
-                                  {value && !options.some((item) => item.code === value) ? (
-                                    <option value={value}>{value}</option>
-                                  ) : null}
-                                  {options.map((item) => (
-                                    <option key={item.code} value={item.code}>
-                                      {optionLabel(item)}
-                                    </option>
-                                  ))}
-                                </select>
-                              ) : (
-                                <Input
-                                  id={field.key}
-                                  name={field.key}
-                                  value={value}
-                                  onChange={(event) => {
-                                    setFieldValue(field.role, event.target.value)
-                                    touchRequest(field.role)
-                                  }}
-                                  onBlur={() => touchRequest(field.role)}
-                                  required
-                                  autoComplete={field.role === "text" ? undefined : "off"}
-                                  spellCheck={field.role === "text" ? undefined : false}
-                                  placeholder={field.sample}
-                                  aria-invalid={Boolean(error)}
-                                  aria-describedby={error ? `${field.key}-error` : undefined}
-                                  className={field.role === "text" ? undefined : "font-mono"}
-                                />
-                              )}
-                              {error ? (
-                                <FieldError id={`${field.key}-error`}>{error}</FieldError>
-                              ) : null}
-                            </Field>
-                          )
-                        })}
-                      </div>
-                    )}
-                    <Field data-invalid={Boolean(contentTypeError) || undefined}>
-                      <LabelTip
-                        htmlFor="content-type"
-                        label="Format"
-                        tipLabel="About the format"
-                      >
-                        How the body is encoded. Most translation APIs expect application/json.
-                      </LabelTip>
-                      <Input
-                        id="content-type"
-                        name="contentType"
-                        value={contentType}
-                        onChange={(event) => {
-                          setContentType(event.target.value)
-                          touchRequest("content-type")
-                        }}
-                        onBlur={() => touchRequest("content-type")}
-                        required
-                        autoComplete="off"
-                        spellCheck={false}
-                        aria-invalid={Boolean(contentTypeError)}
-                        aria-describedby={contentTypeError ? "content-type-error" : undefined}
-                        className="max-w-xs font-mono"
-                      />
-                      {contentTypeError ? (
-                        <FieldError id="content-type-error">{contentTypeError}</FieldError>
-                      ) : null}
-                    </Field>
+            <div hidden={requestTab !== "fields"}>
+              <div className="space-y-3 px-4 py-4">
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <Field data-invalid={Boolean(countError) || undefined}>
-                    <LabelTip htmlFor="count" label="Requests" tipLabel="About how many requests">
-                      How many times to send this check. Use more than one to see if it stays
-                      reliable.
-                    </LabelTip>
+                  {otherCustomizeFields.map(renderCustomizeField)}
+                </div>
+              </div>
+              {languageFields.length > 0 ? (
+                <>
+                  <Separator />
+                  <div className="space-y-3 px-4 py-4">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {languageFields.map(renderCustomizeField)}
+                    </div>
+                    {canTestAllPairs ? (
+                      <Field orientation="horizontal" className="w-auto">
+                        <Checkbox
+                          id="all-language-pairs"
+                          checked={allLanguagePairs}
+                          onCheckedChange={(value) => toggleAllLanguagePairs(value === true)}
+                        />
+                        <FieldLabel htmlFor="all-language-pairs">Test all language pairs</FieldLabel>
+                      </Field>
+                    ) : null}
+                  </div>
+                </>
+              ) : null}
+            </div>
+            {requestTab === "fields" ? (
+              <>
+                <Separator />
+                <div className="grid grid-cols-[5.25rem_minmax(0,1fr)] items-center gap-x-3 gap-y-3 px-4 py-4">
+                  <FieldLabel htmlFor="count">Requests</FieldLabel>
+                  <Field
+                    orientation="horizontal"
+                    data-invalid={Boolean(countError) || undefined}
+                    className="w-auto flex-wrap *:data-[slot=field-label]:flex-none"
+                  >
                     <Input
                       id="count"
                       name="requestCount"
@@ -1144,173 +1294,111 @@ export function ProbeApp({ initialUrl }: { initialUrl: string }) {
                       autoComplete="off"
                       required
                       min={1}
-                      max={MAX_REQUESTS}
+                      max={allPairsActive ? HUNIKI_LANGUAGE_PAIRS.length : MAX_REQUESTS}
                       step={1}
                       value={requestCount}
+                      disabled={allPairsActive}
                       onChange={(event) => {
                         setRequestCount(event.target.value)
                         touchRequest("count")
                       }}
                       onBlur={() => touchRequest("count")}
-                      aria-invalid={Boolean(countError)}
+                      aria-invalid={Boolean(countError) || undefined}
                       aria-describedby={countError ? "count-error" : undefined}
-                      className="max-w-32 tabular-nums"
+                      className="w-24 tabular-nums"
                     />
-                    {countError ? <FieldError id="count-error">{countError}</FieldError> : null}
+                    {countError ? (
+                      <FieldError id="count-error" className="basis-full">
+                        {countError}
+                      </FieldError>
+                    ) : null}
                   </Field>
-                  <Field data-invalid={Boolean(latencyError) || undefined}>
-                    <LabelTip
-                      htmlFor="latency"
-                      label="Maximum delay"
-                      tipLabel="About the maximum delay"
-                    >
-                      If a response takes longer than this, we mark it slow even when the body is
-                      correct.
-                    </LabelTip>
-                    <Input
-                      id="latency"
-                      name="latency"
-                      type="number"
-                      inputMode="numeric"
-                      autoComplete="off"
-                      required
-                      min={1}
-                      max={RUN_TIMEOUT_MAX_MS}
-                      step={1}
-                      value={latencyMs}
-                      onChange={(event) => {
-                        setLatencyMs(event.target.value)
-                        touchRequest("latency")
-                      }}
-                      onBlur={() => touchRequest("latency")}
-                      aria-invalid={Boolean(latencyError)}
-                      aria-describedby={latencyError ? "latency-error" : undefined}
-                      className="max-w-32 tabular-nums"
-                    />
-                    {latencyError ? <FieldError id="latency-error">{latencyError}</FieldError> : null}
-                  </Field>
-                </div>
-                <fieldset>
-                  <legend className="mb-2 flex items-center gap-1.5 text-sm font-medium">
-                    How to send them
-                    <InfoTip label="About how to send them">
-                      One by one waits for each response. In parallel sends them together. With a
-                      delay waits between each send.
-                    </InfoTip>
-                  </legend>
-                  <div className="flex flex-wrap gap-2">
-                    {(
-                      [
-                        ["sequential", "One by one"],
-                        ["parallel", "In parallel"],
-                        ["delayed", "With a delay"],
-                      ] as const
-                    ).map(([value, label]) => (
-                      <label
-                        key={value}
-                        className={CHOICE_CHIP}
+                  {isMultipleRequests(requestCount) ? (
+                    <>
+                      <span id="sequence-label" className="text-sm font-medium">
+                        Sequence
+                      </span>
+                      <div
+                        role="radiogroup"
+                        aria-labelledby="sequence-label"
+                        className="motion-enter flex flex-wrap gap-2"
                       >
-                        <input
-                          type="radio"
-                          name="sendMode"
-                          value={value}
-                          checked={sendMode === value}
-                          className={CHOICE_RADIO}
-                          onChange={() => setSendMode(value)}
-                        />
-                        {label}
-                      </label>
-                    ))}
-                  </div>
-                </fieldset>
-                {sendMode === "delayed" ? (
-                  <Field data-invalid={Boolean(gapError) || undefined}>
-                    <LabelTip
-                      htmlFor="gap"
-                      label="Delay between requests (ms)"
-                      tipLabel="About the delay between requests"
-                    >
-                      How long to wait after one response before sending the next.
-                    </LabelTip>
-                    <Input
-                      id="gap"
-                      name="gapMs"
-                      type="number"
-                      inputMode="numeric"
-                      autoComplete="off"
-                      required
-                      min={0}
-                      max={MAX_GAP_MS}
-                      step={1}
-                      value={gapMs}
-                      onChange={(event) => {
-                        setGapMs(event.target.value)
-                        touchRequest("gap")
-                      }}
-                      onBlur={() => touchRequest("gap")}
-                      aria-invalid={Boolean(gapError)}
-                      aria-describedby={gapError ? "gap-error" : undefined}
-                      className="max-w-32 tabular-nums"
-                    />
-                    {gapError ? <FieldError id="gap-error">{gapError}</FieldError> : null}
-                  </Field>
-                ) : null}
-                <details className="overscroll-contain">
-                  <summary className="cursor-pointer rounded-sm text-xs text-muted-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none">
-                    What we will send
-                  </summary>
-                  <pre
-                    translate="no"
-                    tabIndex={0}
-                    className="mt-2 max-h-40 overflow-auto overscroll-contain rounded-lg border border-border bg-zinc-50 px-3 py-2 font-mono text-xs break-words whitespace-pre-wrap focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-zinc-950/60"
-                  >
-                    {curl}
-                  </pre>
-                </details>
-              </div>
+                        {(
+                          [
+                            ["sequential", "Sequential"],
+                            ["parallel", "Concurrent"],
+                          ] as const
+                        ).map(([value, label]) => (
+                          <label key={value} className={`${CHOICE_CHIP} shrink-0 whitespace-nowrap`}>
+                            <input
+                              type="radio"
+                              name="sendMode"
+                              value={value}
+                              checked={sendMode === value}
+                              className={CHOICE_RADIO}
+                              onChange={() => setSendMode(value)}
+                            />
+                            {label}
+                          </label>
+                        ))}
+                      </div>
+                    </>
+                  ) : null}
+                </div>
+              </>
+            ) : (
+              <RequestPreviewList curls={previewCurls} />
+            )}
 
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                id="test-request"
-                type="submit"
-                aria-busy={testing}
-                disabled={testing}
-              >
-                {result ? "Retest" : "Submit"}
-              </Button>
-              {testing ? (
-                <Button type="button" variant="outline" onClick={cancel}>
-                  Cancel
-                </Button>
-              ) : null}
             </div>
-            <p aria-live="polite" className="text-sm text-muted-foreground">
-              {testing
-                ? Number(requestCount) > 1
-                  ? `Running ${requestCount} checks…`
-                  : "Running the check…"
-                : "\u00a0"}
-            </p>
-            {error ? <FieldError id="test-error">{error}</FieldError> : null}
+            {error ? (
+              <FieldError id="test-error" className="px-4 pt-2">
+                {error}
+              </FieldError>
+            ) : null}
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setRequestTab(requestTab === "fields" ? "preview" : "fields")}
+              >
+                {requestTab === "fields" ? "Preview requests" : "Edit fields"}
+              </Button>
+              <span className="flex flex-wrap items-center gap-2">
+                {testing ? (
+                  <Button type="button" variant="outline" onClick={cancel}>
+                    Cancel
+                  </Button>
+                ) : null}
+                <Button
+                  id="test-request"
+                  type="submit"
+                  aria-busy={testing}
+                  disabled={testing}
+                >
+                  {testing ? "Running..." : result ? "Retest" : "Submit"}
+                </Button>
+              </span>
+            </div>
           </section>
         ) : null}
 
       {hasEndpoint && authOk && result ? (
         <section
-          className="scroll-mt-20 space-y-6 rounded-xl border border-border bg-zinc-50 p-6 dark:bg-zinc-900"
-          aria-labelledby="result-heading"
+          id="result-heading"
+          tabIndex={-1}
+          className="motion-enter scroll-mt-20 space-y-4 rounded-xl border border-border bg-card p-6 outline-none"
+          aria-labelledby="result-title"
         >
-          <header className="space-y-1">
+          <header className="space-y-3">
             <h2
-              id="result-heading"
-              tabIndex={-1}
-              className="text-pretty text-xl font-semibold outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+              id="result-title"
+              className="text-pretty text-xl/6 font-semibold"
             >
-              {resultCardTitle(result)}
+              {resultCardTitle(result, averageMs)}
             </h2>
-            <p className="text-pretty text-sm text-muted-foreground">Results below</p>
             {result.diagnosis.next ? (
-              <p className="pt-2 text-pretty text-sm">{result.diagnosis.next}</p>
+              <p className="text-pretty text-sm">{result.diagnosis.next}</p>
             ) : null}
             {result.shapeChange ? (
               <p className="text-pretty text-sm text-amber-600 dark:text-amber-400">
@@ -1318,21 +1406,16 @@ export function ProbeApp({ initialUrl }: { initialUrl: string }) {
               </p>
             ) : null}
             {runs.length > 1 ? (
-              <ol className="space-y-1 pt-2 font-mono text-xs tabular-nums text-muted-foreground">
-                {runs.map((item, index) => (
-                  <li key={`${item.response?.durationMs ?? 0}-${index}`}>
-                    {index + 1}. {item.response?.status ?? "—"} ·{" "}
-                    {item.response ? formatMs(item.response.durationMs) : "—"} · {item.overall}
-                  </li>
-                ))}
-              </ol>
+              <RunResultsTable
+                runs={runs}
+                selectedIndex={selectedRunIndex}
+                onSelect={setSelectedRunIndex}
+              />
             ) : null}
           </header>
 
           <div className="space-y-3">
-            <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-              What we checked
-            </h3>
+            <h3 className="text-sm font-medium">At a glance</h3>
             <ul className="space-y-2">
               {HEALTH_CHECKS.map((check) => {
                 const value = result.health[check.key]
@@ -1340,7 +1423,7 @@ export function ProbeApp({ initialUrl }: { initialUrl: string }) {
                   <li key={check.key} className="flex items-start gap-2 text-sm">
                     <HealthStatus value={value} />
                     <p className="flex items-start gap-1 text-pretty">
-                      {explainHealth(check.key, result, latencyMs)}
+                      {explainHealth(check.key, result, averageMs)}
                       <InfoTip label={check.tipLabel}>{check.tip}</InfoTip>
                     </p>
                   </li>
@@ -1349,97 +1432,67 @@ export function ProbeApp({ initialUrl }: { initialUrl: string }) {
             </ul>
           </div>
 
-          {result.response ? (
+          {selectedResult?.response ? (
             <div className="space-y-3">
               <div className="space-y-1">
-                <h3 className="text-sm font-medium">What came back</h3>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-sm font-medium">Response details</h3>
+                  {runs.length > 1 ? (
+                    <Select
+                      value={String(selectedRunIndex)}
+                      items={runs.map((_, index) => ({
+                        value: String(index),
+                        label: `Request ${index + 1}`,
+                      }))}
+                      onValueChange={(next) => {
+                        if (typeof next !== "string") return
+                        setSelectedRunIndex(Number(next))
+                      }}
+                    >
+                      <SelectTrigger
+                        size="sm"
+                        aria-label="Request to inspect"
+                        className="w-auto min-w-32"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {runs.map((_, index) => (
+                          <SelectItem key={index} value={String(index)}>
+                            Request {index + 1}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : null}
+                </div>
                 <p className="font-mono text-sm">
-                  {result.response.status} {result.response.statusText}
+                  {selectedResult.response.status} {selectedResult.response.statusText}
                   <span className="tabular-nums text-muted-foreground">
                     {" "}
-                    · {formatMs(result.response.durationMs)}
+                    · {formatMs(selectedResult.response.durationMs)}
                   </span>
                 </p>
               </div>
               <CodeBlock className="max-h-64" code={prettyBody || "(empty body)"} />
-              <details className="overscroll-contain">
-                <summary className="cursor-pointer rounded-sm text-xs text-muted-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none">
+              <details className="group">
+                <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-sm text-xs text-muted-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none [&::-webkit-details-marker]:hidden">
+                  <ChevronDown
+                    aria-hidden
+                    className="size-3.5 shrink-0 transition-transform duration-[160ms] ease-out -rotate-90 group-open:rotate-0"
+                  />
                   Response headers
                 </summary>
                 <CodeBlock
-                  className="mt-2 max-h-64"
-                  code={JSON.stringify(result.response.headers, null, 2)}
+                  className="mt-2 overflow-visible"
+                  code={JSON.stringify(selectedResult.response.headers, null, 2)}
                 />
               </details>
             </div>
           ) : null}
-
-          {result.suggestedAssertions.length > 0 || assertions.length > 0 ? (
-            <fieldset>
-              <legend className="mb-2 flex items-center gap-1.5 text-sm font-medium">
-                Require these fields
-                <InfoTip label="About required fields">
-                  On the next test, fail if these JSON paths are missing or empty.
-                </InfoTip>
-              </legend>
-              <div className="flex flex-wrap gap-3">
-                {[...result.suggestedAssertions, ...assertions]
-                  .filter(
-                    (item, index, all) =>
-                      all.findIndex((other) => other.path === item.path) === index,
-                  )
-                  .map((assertion) => {
-                    const id = `assert-${assertion.path}`
-                    const checked = assertions.some((item) => item.path === assertion.path)
-                    return (
-                      <Field key={assertion.path} orientation="horizontal" className="w-auto">
-                        <Checkbox
-                          id={id}
-                          checked={checked}
-                          onCheckedChange={(value) => toggleAssertion(assertion, value === true)}
-                        />
-                        <FieldLabel htmlFor={id} className="font-normal font-mono">
-                          {assertion.path} is {assertion.kind === "nonempty" ? "non-empty" : "present"}
-                        </FieldLabel>
-                      </Field>
-                    )
-                  })}
-              </div>
-              {result.suggestedAssertions[0] ? (
-                <FieldDescription>
-                  It looks like {result.suggestedAssertions[0].path} contains the output. Require
-                  this field?
-                </FieldDescription>
-              ) : null}
-            </fieldset>
-          ) : null}
         </section>
       ) : null}
       </form>
-
-      {hasEndpoint && authOk && history.length > 0 ? (
-        <section
-          aria-labelledby="history-heading"
-          className="rounded-xl border border-border bg-card px-4 py-4"
-        >
-          <h2
-            id="history-heading"
-            className="mb-2 flex items-center gap-1.5 scroll-mt-20 text-xs font-medium tracking-wide text-muted-foreground uppercase"
-          >
-            This session
-            <InfoTip label="About this session">
-              Recent tests in this browser tab. Nothing is stored after you leave.
-            </InfoTip>
-          </h2>
-          <ol className="space-y-1 font-mono text-xs">
-            {history.map((entry) => (
-              <li key={entry.id} className="tabular-nums">
-                {entry.status ?? "—"} · {formatMs(entry.durationMs)} · {entry.overall}
-              </li>
-            ))}
-          </ol>
-        </section>
-      ) : null}
     </div>
   )
 }
