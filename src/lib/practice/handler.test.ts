@@ -104,6 +104,22 @@ describe("handlePracticeRequest", () => {
     expect(response.status).toBe(200)
   })
 
+  it("accepts practice-key in a settings-shaped auth field", async () => {
+    const response = await handlePracticeRequest(
+      request(TRANSLATE, {
+        body: {
+          text: "Hello",
+          source: "en",
+          target: "tw",
+          api_name: "lesan",
+          "Ocp-Apim-Subscription-Key": working.token,
+        },
+      }),
+      working,
+    )
+    expect(response.status).toBe(200)
+  })
+
   it("omits translatedText when expected output is off", async () => {
     const response = await handlePracticeRequest(request(TRANSLATE, { body: hunikiBody() }), {
       ...working,

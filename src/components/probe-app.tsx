@@ -31,6 +31,12 @@ import {
   type BodyFieldRole,
   type FieldValues,
 } from "@/lib/probe/defaults"
+import {
+  isPracticeEndpoint,
+  matchesPracticeToken,
+  PRACTICE_TOKEN,
+  readStoredPracticeConfig,
+} from "@/lib/practice/config"
 import { APP_DESCRIPTION, APP_HEADLINE } from "@/lib/brand"
 import { formatMs, formatTextStats } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -908,6 +914,21 @@ export function ProbeApp({ initialUrl }: { initialUrl: string }) {
       setAuthOpen(true)
       return
     }
+    if (isPracticeEndpoint(normalizeEndpointUrl(url))) {
+      if (matchesPracticeToken(value, readStoredPracticeConfig())) {
+        lastCheckedSecret.current = value
+        setAuthPhase("valid")
+        setAuthError(null)
+        setAuthOpen(false)
+        focusAfterPaint("request-heading")
+        return
+      }
+      lastCheckedSecret.current = ""
+      setAuthPhase(touched ? "invalid" : "idle")
+      setAuthError(touched ? "That token was rejected. Check the value and try again." : null)
+      setAuthOpen(true)
+      return
+    }
     if (value === lastCheckedSecret.current && authPhase === "valid") return
     setAuthPhase("checking")
     setAuthError(null)
@@ -936,8 +957,14 @@ export function ProbeApp({ initialUrl }: { initialUrl: string }) {
   }
 
   useEffect(() => {
-    if (!hasEndpoint || validateSecret(secret)) return
-    scheduleAuthCheck(secret)
+    if (!hasEndpoint) return
+    const practice = isPracticeEndpoint(normalizeEndpointUrl(url))
+    const nextSecret = practice ? readStoredPracticeConfig().token : secret
+    if (practice && nextSecret !== secret) {
+      setSecret(nextSecret)
+    }
+    if (validateSecret(nextSecret)) return
+    scheduleAuthCheck(nextSecret, practice)
     return () => window.clearTimeout(checkTimerRef.current)
     // Recheck only when the endpoint changes. Body edits should not restart auth.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1204,7 +1231,11 @@ export function ProbeApp({ initialUrl }: { initialUrl: string }) {
                       autoComplete="off"
                       spellCheck={false}
                       required
-                      placeholder="eyJhbGci…"
+                      placeholder={
+                        isPracticeEndpoint(normalizeEndpointUrl(url))
+                          ? PRACTICE_TOKEN
+                          : "eyJhbGci…"
+                      }
                       aria-invalid={authPhase === "invalid"}
                       aria-describedby={
                         authError ? "auth-error" : authPhase === "checking" ? "auth-status" : undefined

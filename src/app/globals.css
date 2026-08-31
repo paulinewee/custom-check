@@ -164,15 +164,12 @@
     pointer-events: auto;
     opacity: 1;
   }
-  html.theme-transition,
-  html.theme-transition *,
-  html.theme-transition *::before,
-  html.theme-transition *::after {
-    transition-property: background-color, color, border-color, fill, stroke, box-shadow,
-      outline-color;
-    transition-duration: 220ms;
-    transition-timing-function: var(--ease-in-out);
-  }
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 140ms;
+  animation-timing-function: var(--ease-out);
 }
 
 @layer components {
@@ -210,5 +207,10 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none !important;
   }
 }

@@ -11,11 +11,11 @@ import { Label } from "@/components/ui/label"
 import {
   defaultPracticeConfig,
   parsePracticeConfig,
-  parsePracticeCookie,
   PRACTICE_STORAGE_KEY,
   PRACTICE_TOKEN,
   PRACTICE_TRANSLATE_PATH,
   practiceTranslateUrl,
+  readStoredPracticeConfig,
   serializePracticeCookie,
   type PracticeConfig,
   type PracticeToggle,
@@ -38,16 +38,6 @@ function persist(config: PracticeConfig) {
     /* ignore quota / private mode */
   }
   document.cookie = serializePracticeCookie(config)
-}
-
-function readStored(): PracticeConfig {
-  try {
-    const stored = window.localStorage.getItem(PRACTICE_STORAGE_KEY)
-    if (stored) return parsePracticeConfig(stored)
-  } catch {
-    /* ignore */
-  }
-  return parsePracticeCookie(document.cookie)
 }
 
 function WorkingSwitch({
@@ -94,7 +84,7 @@ export function ConfigurePractice() {
 
   useEffect(() => {
     setOrigin(window.location.origin)
-    const stored = readStored()
+    const stored = readStoredPracticeConfig()
     setConfig(stored)
     setTokenDraft(stored.token)
   }, [])

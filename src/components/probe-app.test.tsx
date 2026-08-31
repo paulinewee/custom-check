@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { SavedTestsProvider } from "@/components/saved-tests-context"
+import { PRACTICE_STORAGE_KEY, PRACTICE_TOKEN } from "@/lib/practice/config"
 import { TRANSLATE_ENDPOINT } from "@/lib/probe/constants"
 import { HUNIKI_LANGUAGES } from "@/lib/probe/defaults"
 import { readSavedTests } from "@/lib/saved-tests"
@@ -171,13 +172,44 @@ describe("ProbeApp", () => {
 
     it("allows the local practice endpoint", async () => {
       const user = userEvent.setup()
-      mockHunikiApi()
       render(<ProbeApp initialUrl="" />)
 
       await typeEndpoint(user, "http://localhost:3000/api/practice/translate")
-      await waitForAuthCard()
 
-      expect(screen.getByLabelText("Authentication token")).toBeInTheDocument()
+      expect(await screen.findByRole("heading", { name: /Customize your test/ })).toBeInTheDocument()
+    })
+
+    it("prefills the practice token and accepts it without calling the API", async () => {
+      const user = userEvent.setup()
+      const fetchMock = mockHunikiApi()
+      window.localStorage.setItem(
+        PRACTICE_STORAGE_KEY,
+        JSON.stringify({ token: PRACTICE_TOKEN }),
+      )
+      render(<ProbeApp initialUrl="http://localhost:3000/api/practice/translate" />)
+
+      expect(await screen.findByRole("heading", { name: /Customize your test/ })).toBeInTheDocument()
+      await expandAuth(user)
+      expect(screen.getByLabelText("Authentication token")).toHaveValue(PRACTICE_TOKEN)
+      expect(fetchMock).not.toHaveBeenCalled()
+    })
+
+    it("rejects a wrong token on the practice endpoint without calling the API", async () => {
+      const user = userEvent.setup()
+      const fetchMock = mockHunikiApi()
+      render(<ProbeApp initialUrl="http://localhost:3000/api/practice/translate" />)
+      expect(await screen.findByRole("heading", { name: /Customize your test/ })).toBeInTheDocument()
+      await expandAuth(user)
+
+      const token = screen.getByLabelText("Authentication token")
+      await user.clear(token)
+      await user.type(token, "not-the-practice-key")
+
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "That token was rejected. Check the value and try again.",
+      )
+      expect(screen.queryByRole("heading", { name: /Customize your test/ })).not.toBeInTheDocument()
+      expect(fetchMock).not.toHaveBeenCalled()
     })
   })
 
@@ -191,7 +223,7 @@ describe("ProbeApp", () => {
 
       expect(screen.getByRole("combobox", { name: "Provider" })).toHaveTextContent("GhanaNLP")
       await user.click(screen.getByRole("combobox", { name: "Provider" }))
-      expect(screen.getByRole("option", { name: "GhanaNLP" })).toBeInTheDocument()
+      expect(await screen.findByRole("option", { name: "GhanaNLP" })).toBeInTheDocument()
       expect(screen.getByRole("option", { name: "Lelapa" })).toBeInTheDocument()
       expect(screen.getByRole("option", { name: "Lesan" })).toBeInTheDocument()
       expect(screen.queryByRole("option", { name: "Google" })).not.toBeInTheDocument()

@@ -17,23 +17,34 @@ export function isDarkTheme(theme: Theme) {
   return theme === "dark" || (theme === "system" && prefersDark())
 }
 
-const THEME_TRANSITION_MS = 220
-
-let themeTransitionTimer = 0
-
-export function applyTheme(theme: Theme, options?: { animate?: boolean }) {
+function paintTheme(theme: Theme) {
   const root = document.documentElement
   const dark = isDarkTheme(theme)
-  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches
-  if (options?.animate && !reduceMotion) {
-    root.classList.add("theme-transition")
-    window.clearTimeout(themeTransitionTimer)
-    themeTransitionTimer = window.setTimeout(() => {
-      root.classList.remove("theme-transition")
-    }, THEME_TRANSITION_MS)
-  }
   root.classList.toggle("dark", dark)
   root.style.colorScheme = dark ? "dark" : "light"
+}
+
+function canAnimateTheme() {
+  return (
+    typeof document !== "undefined" &&
+    typeof document.startViewTransition === "function" &&
+    !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  )
+}
+
+export function applyTheme(theme: Theme, options?: { animate?: boolean }) {
+  if (!options?.animate || !canAnimateTheme()) {
+    paintTheme(theme)
+    return
+  }
+
+  try {
+    document.startViewTransition(() => {
+      paintTheme(theme)
+    })
+  } catch {
+    paintTheme(theme)
+  }
 }
 
 export function readStoredTheme(): Theme {

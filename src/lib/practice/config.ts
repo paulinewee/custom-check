@@ -37,6 +37,12 @@ export function defaultPracticeConfig(): PracticeConfig {
   }
 }
 
+export function matchesPracticeToken(secret: string, config: PracticeConfig = defaultPracticeConfig()) {
+  const token = secret.trim()
+  if (!token) return false
+  return token === PRACTICE_TOKEN || token === config.token.trim()
+}
+
 export function isPracticeEndpoint(url: string): boolean {
   try {
     const path = new URL(url.trim()).pathname.replace(/\/+$/, "")
@@ -80,6 +86,17 @@ export function parsePracticeCookie(cookieHeader: string | null | undefined): Pr
     return parsePracticeConfig(decodeURIComponent(part.slice(separator + 1).trim()))
   }
   return defaultPracticeConfig()
+}
+
+export function readStoredPracticeConfig(): PracticeConfig {
+  if (typeof window === "undefined") return defaultPracticeConfig()
+  try {
+    const stored = window.localStorage.getItem(PRACTICE_STORAGE_KEY)
+    if (stored) return parsePracticeConfig(stored)
+  } catch {
+    /* ignore quota / private mode */
+  }
+  return parsePracticeCookie(typeof document === "undefined" ? null : document.cookie)
 }
 
 export function serializePracticeCookie(config: PracticeConfig): string {

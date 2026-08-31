@@ -26,7 +26,7 @@ export function ThemeToggle({ variant = "meter" }: { variant?: "meter" | "icon" 
           const index = OPTIONS.findIndex((option) => option.value === theme)
           setTheme(OPTIONS[(index + 1) % OPTIONS.length]!.value)
         }}
-        className="inline-flex size-7 items-center justify-center rounded-full text-foreground outline-none transition-colors duration-200 ease-out hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
+        className="inline-flex size-7 items-center justify-center rounded-full text-foreground outline-none transition-colors duration-[120ms] ease-out hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
       >
         <Icon className="size-4" aria-hidden />
       </button>
@@ -48,8 +48,8 @@ export function ThemeToggle({ variant = "meter" }: { variant?: "meter" | "icon" 
             onClick={() => setTheme(option.value)}
             className={
               selected
-                ? "inline-flex size-7 items-center justify-center rounded-full bg-foreground text-background outline-none transition-colors duration-200 ease-out focus-visible:ring-3 focus-visible:ring-ring/50"
-                : "inline-flex size-7 items-center justify-center rounded-full text-muted-foreground outline-none transition-colors duration-200 ease-out hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+                ? "inline-flex size-7 items-center justify-center rounded-full bg-foreground text-background outline-none transition-colors duration-[120ms] ease-out focus-visible:ring-3 focus-visible:ring-ring/50"
+                : "inline-flex size-7 items-center justify-center rounded-full text-muted-foreground outline-none transition-colors duration-[120ms] ease-out hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
             }
           >
             <Icon className="size-3.5" aria-hidden />

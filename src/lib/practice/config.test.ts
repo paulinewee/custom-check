@@ -6,8 +6,11 @@ import {
   parsePracticeConfig,
   parsePracticeCookie,
   PRACTICE_COOKIE,
+  PRACTICE_STORAGE_KEY,
   PRACTICE_TOKEN,
   practiceTranslateUrl,
+  matchesPracticeToken,
+  readStoredPracticeConfig,
   serializePracticeCookie,
 } from "./config"
 
@@ -23,6 +26,16 @@ describe("isPracticeEndpoint", () => {
     expect(isPracticeEndpoint("http://localhost/api/practice/v2/languages")).toBe(false)
     expect(isPracticeEndpoint("http://localhost/v2/translate")).toBe(false)
     expect(isPracticeEndpoint("not-a-url")).toBe(false)
+  })
+})
+
+describe("matchesPracticeToken", () => {
+  it("accepts the default practice key and a configured token", () => {
+    expect(matchesPracticeToken("practice-key")).toBe(true)
+    expect(matchesPracticeToken("lab-key", { ...defaultPracticeConfig(), token: "lab-key" })).toBe(
+      true,
+    )
+    expect(matchesPracticeToken("wrong")).toBe(false)
   })
 })
 
@@ -47,6 +60,18 @@ describe("practice cookie", () => {
 
   it("returns defaults when the cookie is missing", () => {
     expect(parsePracticeCookie(null).token).toBe(PRACTICE_TOKEN)
+  })
+})
+
+describe("readStoredPracticeConfig", () => {
+  it("prefers localStorage over the cookie", () => {
+    window.localStorage.setItem(
+      PRACTICE_STORAGE_KEY,
+      JSON.stringify({ ...defaultPracticeConfig(), token: "lab-key" }),
+    )
+    document.cookie = serializePracticeCookie(defaultPracticeConfig())
+    expect(readStoredPracticeConfig().token).toBe("lab-key")
+    window.localStorage.clear()
   })
 })
 

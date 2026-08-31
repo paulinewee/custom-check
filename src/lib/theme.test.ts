@@ -1,11 +1,11 @@
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { THEME_KEY, applyTheme, isTheme, readStoredTheme, writeStoredTheme } from "./theme"
 
 describe("theme", () => {
   afterEach(() => {
     window.localStorage.clear()
-    document.documentElement.classList.remove("dark", "theme-transition")
+    document.documentElement.classList.remove("dark")
     document.documentElement.style.colorScheme = ""
   })
 
@@ -22,11 +22,27 @@ describe("theme", () => {
     applyTheme("dark")
     expect(document.documentElement).toHaveClass("dark")
     expect(document.documentElement.style.colorScheme).toBe("dark")
-    expect(document.documentElement).not.toHaveClass("theme-transition")
 
     applyTheme("light", { animate: true })
-    expect(document.documentElement).toHaveClass("theme-transition")
     expect(document.documentElement).not.toHaveClass("dark")
+    expect(document.documentElement.style.colorScheme).toBe("light")
+  })
+
+  it("crossfades with a view transition when asked to animate", () => {
+    const start = vi.fn((update: () => void) => {
+      update()
+      return { finished: Promise.resolve() }
+    })
+    Object.defineProperty(document, "startViewTransition", {
+      configurable: true,
+      value: start,
+    })
+
+    applyTheme("dark", { animate: true })
+    expect(start).toHaveBeenCalledTimes(1)
+    expect(document.documentElement).toHaveClass("dark")
+
+    Reflect.deleteProperty(document, "startViewTransition")
   })
 
   it("round-trips the stored preference", () => {

@@ -29,12 +29,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<Theme>("dark")
 
   useLayoutEffect(() => {
-    setThemeState(readStoredTheme())
+    const stored = readStoredTheme()
+    setThemeState(stored)
+    applyTheme(stored)
   }, [])
-
-  useLayoutEffect(() => {
-    applyTheme(theme)
-  }, [theme])
 
   useEffect(() => {
     if (theme !== "system") return

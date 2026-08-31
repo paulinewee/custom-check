@@ -1,6 +1,6 @@
 import {
+  matchesPracticeToken,
   PRACTICE_SLOW_MS,
-  PRACTICE_TOKEN,
   PRACTICE_TRANSLATE_PATH,
   type PracticeConfig,
 } from "@/lib/practice/config"
@@ -14,18 +14,29 @@ function json(body: unknown, status = 200): Response {
   })
 }
 
-function bodyToken(record: Record<string, unknown>): string {
+function headerToken(request: Request): string {
+  const bearer = request.headers.get("authorization")
+  if (bearer) {
+    const match = /^Bearer\s+(.+)$/i.exec(bearer.trim())
+    if (match?.[1]) return match[1].trim()
+  }
+  for (const name of ["x-api-key", "api_key", "ocp-apim-subscription-key"]) {
+    const value = request.headers.get(name)
+    if (value?.trim()) return value.trim()
+  }
+  return ""
+}
+
+function requestToken(record: Record<string, unknown>, config: PracticeConfig, request: Request): string {
+  for (const value of Object.values(record)) {
+    if (typeof value === "string" && matchesPracticeToken(value, config)) return value.trim()
+  }
   for (const [key, value] of Object.entries(record)) {
     if (typeof value === "string" && isAuthFieldKey(key) && value.trim()) {
       return value.trim()
     }
   }
-  return ""
-}
-
-function acceptsToken(config: PracticeConfig, apiKey: string) {
-  if (!apiKey) return false
-  return apiKey === config.token.trim() || apiKey === PRACTICE_TOKEN
+  return headerToken(request)
 }
 
 function pathnameOf(request: Request): string {
@@ -73,8 +84,8 @@ export async function handlePracticeRequest(
   }
 
   const record = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {}
-  const apiKey = bodyToken(record)
-  if (!config.authenticated || !acceptsToken(config, apiKey)) {
+  const apiKey = requestToken(record, config, request)
+  if (!config.authenticated || !matchesPracticeToken(apiKey, config)) {
     return json({ detail: "Unauthorized" }, 401)
   }
 
