@@ -32,25 +32,33 @@ describe("ConfigurePractice", () => {
     window.localStorage.clear()
   })
 
-  it("shows the practice URL and a link to Overview", async () => {
+  it("shows the practice URL and a link to Home", async () => {
     render(<ConfigurePractice />)
 
+    expect(await screen.findByRole("heading", { name: "Test Endpoint", level: 1 })).toBeInTheDocument()
     expect(
-      await screen.findByRole("heading", { name: "Configure Test Endpoint" }),
+      screen.getByText("Use this endpoint for testing in lieu of a live API service."),
     ).toBeInTheDocument()
-    expect(screen.getByText("http://localhost:3000/api/practice/v2/translate")).toBeInTheDocument()
-    expect(screen.getByRole("link", { name: "Test on Overview" })).toHaveAttribute(
+    expect(screen.getByRole("heading", { name: "Test Endpoint", level: 2 })).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Test Conditions" })).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Test Authentication Token" })).toBeInTheDocument()
+    expect(screen.queryByText(/Same path and body as Huniki/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Paste this on Overview/)).not.toBeInTheDocument()
+    expect(screen.getByText("http://localhost:3000/api/practice/translate")).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "Test" })).toHaveAttribute(
       "href",
-      "/?url=http%3A%2F%2Flocalhost%3A3000%2Fapi%2Fpractice%2Fv2%2Ftranslate",
+      "/?url=http%3A%2F%2Flocalhost%3A3000%2Fapi%2Fpractice%2Ftranslate",
     )
-    expect(screen.getByRole("textbox", { name: "Accepted token" })).toHaveValue(PRACTICE_TOKEN)
+    expect(screen.getByRole("textbox", { name: "Test Authentication Token" })).toHaveValue(
+      PRACTICE_TOKEN,
+    )
   })
 
   it("persists a toggle so the next request can fail authentication", async () => {
     const user = userEvent.setup()
     render(<ConfigurePractice />)
 
-    const auth = await screen.findByRole("switch", { name: "Authentication" })
+    const auth = await screen.findByRole("switch", { name: "Authentication succeeds." })
     expect(auth).toHaveAttribute("aria-checked", "true")
     await user.click(auth)
     expect(auth).toHaveAttribute("aria-checked", "false")

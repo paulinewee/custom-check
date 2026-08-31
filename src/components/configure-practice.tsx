@@ -20,50 +20,15 @@ import {
   type PracticeConfig,
   type PracticeToggle,
 } from "@/lib/practice/config"
+import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
 
-const TOGGLES: ReadonlyArray<{
-  key: keyof PracticeToggle
-  label: string
-  on: string
-  off: string
-}> = [
-  {
-    key: "reachable",
-    label: "Reachable",
-    on: "The host answers.",
-    off: "The connection is refused before a response.",
-  },
-  {
-    key: "authenticated",
-    label: "Authentication",
-    on: "The accepted token is allowed.",
-    off: "Every token is rejected with 401.",
-  },
-  {
-    key: "languages",
-    label: "Languages",
-    on: "GET /v2/languages returns the GhanaNLP language map.",
-    off: "The languages list fails, so Source and Target stay text fields.",
-  },
-  {
-    key: "requestValid",
-    label: "Request shape",
-    on: "POST { in, lang } is accepted.",
-    off: "A valid translate body is rejected with 400.",
-  },
-  {
-    key: "expectedOutput",
-    label: "Expected output",
-    on: "The response includes translatedText.",
-    off: "The response is 200 without a translation field.",
-  },
-  {
-    key: "latency",
-    label: "Response time",
-    on: "The response is fast.",
-    off: "The response waits past the 2000 ms threshold.",
-  },
+const TOGGLES: ReadonlyArray<{ key: keyof PracticeToggle; label: string }> = [
+  { key: "reachable", label: "The endpoint is reachable." },
+  { key: "authenticated", label: "Authentication succeeds." },
+  { key: "requestValid", label: "The request shape is accepted." },
+  { key: "expectedOutput", label: "The expected output is returned." },
+  { key: "latency", label: "The response time is acceptable." },
 ]
 
 function persist(config: PracticeConfig) {
@@ -88,20 +53,15 @@ function readStored(): PracticeConfig {
 function WorkingSwitch({
   checked,
   label,
-  description,
   onCheckedChange,
 }: {
   checked: boolean
   label: string
-  description: string
   onCheckedChange: (next: boolean) => void
 }) {
   return (
-    <div className="flex items-start justify-between gap-4">
-      <div className="min-w-0 space-y-1">
-        <p className="text-sm font-medium">{label}</p>
-        <p className="text-pretty text-xs leading-5 text-muted-foreground">{description}</p>
-      </div>
+    <div className="flex items-center justify-between gap-4">
+      <p className="text-sm font-normal">{label}</p>
       <button
         type="button"
         role="switch"
@@ -109,14 +69,14 @@ function WorkingSwitch({
         aria-label={label}
         onClick={() => onCheckedChange(!checked)}
         className={cn(
-          "relative isolate mt-0.5 inline-flex h-6 w-10 shrink-0 rounded-full outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+          "relative isolate inline-flex h-6 w-10 shrink-0 rounded-full outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
           checked ? "bg-foreground" : "bg-input",
         )}
       >
         <span
           aria-hidden
           className={cn(
-            "pointer-events-none absolute top-0.5 left-0.5 size-5 rounded-full bg-background transition-transform",
+            "pointer-events-none absolute top-0.5 left-0.5 size-5 rounded-full bg-background transition-transform duration-200 ease-in-out",
             checked ? "translate-x-4" : "translate-x-0",
           )}
         />
@@ -162,27 +122,18 @@ export function ConfigurePractice() {
   return (
     <div className="space-y-8">
       <header className="space-y-2">
-        <h1 className="text-pretty text-2xl font-semibold tracking-tight">
-          Configure Test Endpoint
+        <h1 className="scroll-mt-6 text-pretty text-2xl font-semibold tracking-tight">
+          Test Endpoint
         </h1>
         <p className="max-w-xl text-pretty text-sm text-muted-foreground">
-          This app hosts a GhanaNLP-shaped translate API. Toggle what works, then check it from
-          Overview instead of the public GhanaNLP host.
+          Use this endpoint for testing in lieu of a live API service.
         </p>
       </header>
 
       <section className="space-y-4 rounded-xl border border-border bg-card px-4 py-4">
-        <div className="space-y-1">
-          <h2 className="text-sm font-medium">Practice endpoint</h2>
-          <p className="text-pretty text-xs leading-5 text-muted-foreground">
-            Same path and body as GhanaNLP: <span className="font-mono">POST</span>{" "}
-            <span className="font-mono">{PRACTICE_TRANSLATE_PATH}</span> with{" "}
-            <span className="font-mono">{"{ in, lang }"}</span> and{" "}
-            <span className="font-mono">Ocp-Apim-Subscription-Key</span>.
-          </p>
-        </div>
+        <h2 className="text-sm font-medium">Test Endpoint</h2>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <code className="min-w-0 flex-1 truncate rounded-lg border border-border bg-muted/50 px-2.5 py-1.5 font-mono text-xs">
+          <code translate="no" className="min-w-0 flex-1 truncate rounded-lg border border-border bg-muted/50 px-2.5 py-1.5 font-mono text-xs">
             {translateUrl}
           </code>
           <div className="flex shrink-0 gap-2">
@@ -195,26 +146,21 @@ export function ConfigurePractice() {
               {copied ? "Copied" : "Copy URL"}
             </button>
             <Link href={overviewHref} className={buttonVariants()}>
-              Test on Overview
+              Test
             </Link>
           </div>
         </div>
       </section>
 
-      <section className="space-y-4 rounded-xl border border-border bg-card px-4 py-4">
-        <div className="space-y-1">
-          <h2 className="text-sm font-medium">What works</h2>
-          <p className="text-pretty text-xs leading-5 text-muted-foreground">
-            Each switch maps to a check on Overview. Changes apply immediately to the next request.
-          </p>
-        </div>
+      <section className="overflow-hidden rounded-xl border border-border bg-card">
+        <h2 className="px-4 py-4 text-sm font-medium">Test Conditions</h2>
+        <Separator />
         <ul className="divide-y divide-border">
           {TOGGLES.map((item) => (
-            <li key={item.key} className="py-3 first:pt-0 last:pb-0">
+            <li key={item.key} className="px-4 py-3">
               <WorkingSwitch
                 checked={config[item.key]}
                 label={item.label}
-                description={config[item.key] ? item.on : item.off}
                 onCheckedChange={(next) => update({ ...config, [item.key]: next })}
               />
             </li>
@@ -223,16 +169,10 @@ export function ConfigurePractice() {
       </section>
 
       <section className="space-y-3 rounded-xl border border-border bg-card px-4 py-4">
-        <div className="space-y-1">
-          <h2 className="text-sm font-medium">Accepted token</h2>
-          <p className="text-pretty text-xs leading-5 text-muted-foreground">
-            Paste this on Overview when Authentication is on. It is a practice value, not a real
-            secret.
-          </p>
-        </div>
+        <h2 className="text-sm font-medium">Test Authentication Token</h2>
         <Field>
           <Label htmlFor="practice-token" className="sr-only">
-            Accepted token
+            Test Authentication Token
           </Label>
           <Input
             id="practice-token"
@@ -240,14 +180,14 @@ export function ConfigurePractice() {
             value={tokenDraft}
             autoComplete="off"
             spellCheck={false}
-            aria-label="Accepted token"
+            aria-label="Test Authentication Token"
             aria-invalid={Boolean(tokenError)}
             aria-describedby={tokenError ? "practice-token-error" : undefined}
-            className="font-mono text-xs md:text-xs"
+            className="font-mono text-base md:text-xs"
             onChange={(event) => {
               const token = event.target.value
               setTokenDraft(token)
-              setTokenError(token.trim() ? null : "Enter a token Overview should send.")
+              setTokenError(token.trim() ? null : "Enter a token Home should send.")
               if (token.trim()) update({ ...config, token: token.trim() })
             }}
             onBlur={() => {
